@@ -1,0 +1,20 @@
+# Template — install.sh substitutes the placeholders and writes the result to
+# /etc/caddy/Caddyfile. Caddy provisions + renews HTTPS automatically and tunnels
+# the WebSocket transparently. You do not normally edit this by hand.
+
+__SITE__ {
+	encode zstd gzip
+
+	# Password gate: testers get a browser login prompt before anything loads.
+	basic_auth {
+		__AUTHUSER__ __AUTHHASH__
+	}
+
+	# Authoritative sim server (WebSocket), same-origin /ws -> Node on localhost.
+	reverse_proxy /ws 127.0.0.1:8080
+
+	# The game client (static Vite build), with SPA fallback.
+	root * /srv/rms/client
+	file_server
+	try_files {path} /index.html
+}

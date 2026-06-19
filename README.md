@@ -1,151 +1,187 @@
 # Robot Mega Structures
 
-A browser-based, massively-multiplayer cooperative construction game. Tiny robots
-build an enormous structure together on a barren planet, joinable from a URL on
-the cheapest phone. See [`Robot-Mega-Structures-Design-Doc-v1.1.md`](./Robot-Mega-Structures-Design-Doc-v1.1.md)
-for the full vision and architecture.
+A browser game where lots of little robots build an enormous structure together,
+joinable from a link on the cheapest phone. See the full vision in
+[`Robot-Mega-Structures-Design-Doc-v1.1.md`](./Robot-Mega-Structures-Design-Doc-v1.1.md).
 
-This repo currently implements **Phase 0 — "Skeleton / prove the pipe"** (§9 of
-the doc): one authoritative sim server, a PixiJS client that interpolates
-authoritative state, a headless bot load-harness, egress instrumentation, and
-artificial latency injection — everything needed to answer *"does many people
-moving around one thing over a laggy connection feel good, and what does it cost
-in bandwidth?"*
+**What works today (Phase 0):** a live game screen — robots wandering a site, with
+click-to-move, pan, and zoom — running on a real authoritative server. It's the
+foundation ("prove the pipe"); the build/crafting gameplay comes next. But you can
+already host it and let testers move robots around together. 🤖
 
-> The binding constraint for this game is **egress, not CPU** (doc §7.2). So the
-> north-star metric is **bytes/player/tick**, instrumented from the first commit
-> and exposed live on both server and client.
+---
 
-## Layout
+## New here? 60-second glossary
+
+You asked: *"is this a branch or a PR or a Pull?"* — here's the whole vocabulary:
+
+- **Repository ("repo")** — the project folder, tracked by **git**. This is it.
+- **Clone** — download a copy of the repo to a computer (command below).
+- **Branch** — a parallel copy of the code you can change without touching the
+  main version. The new code lives on a branch called `claude/hopeful-shannon-9q9hfz`.
+- **`main`** — the primary branch (the "official" version).
+- **Pull Request (PR, a.k.a. "pull")** — a request to merge a branch into `main`,
+  with a page on GitHub to review the changes. Ours is **PR #1**. Merging it copies
+  this code into `main`.
+
+So: the code is on a **branch**, proposed via a **PR**. Nothing is in `main` yet
+until you click **Merge** on PR #1.
+
+> **About "venv":** that's a *Python* thing. This is a JavaScript/Node project, so
+> there's no venv — but you get the same tidiness for free: `pnpm install` puts all
+> the project's libraries in a local `node_modules` folder *inside this project*
+> (nothing gets installed system-wide). On the server we go further and bundle the
+> whole game server into one single file. So: no venv needed, nothing to pollute
+> your machine.
+
+---
+
+## Play it on your own computer (5 minutes)
+
+Great for trying it yourself before hosting.
+
+1. **Install Node.js 22** — get the "LTS" build from <https://nodejs.org>
+   (Windows/macOS: just run the installer).
+2. **Get the code.** On GitHub click the green **Code** button → **Download ZIP**
+   and unzip it — *or*, if you have git:
+   ```bash
+   # while the code is still on the branch (before PR #1 is merged):
+   git clone -b claude/hopeful-shannon-9q9hfz https://github.com/deathcloset/RobotMegaStructures.git
+   # (after you merge PR #1, drop the -b part and just clone normally)
+   cd RobotMegaStructures
+   ```
+3. **Run it:**
+   - macOS / Linux: `bash play-local.sh`
+   - Any OS (manual): `corepack enable` then `pnpm install` then `pnpm dev`
+4. Open **<http://localhost:5173>** in your browser. Click to move your robot;
+   open a second tab to watch the same robots move in both.
+
+---
+
+## Host it for your testers
+
+This puts the game on the internet behind a password so anyone you share the link
+with can play from their phone or PC. Designed for your Ubuntu server (e.g. the
+Gorilla box in LA). You don't need Apache or nginx — the installer sets up
+**Caddy**, which serves the game and handles HTTPS automatically.
+
+**You need:** the server's IP address and SSH access to it.
+
+1. **Connect to your server** (from your home PC):
+   ```bash
+   ssh youruser@YOUR.SERVER.IP
+   ```
+2. **Get the code onto the server:**
+   ```bash
+   sudo apt update && sudo apt install -y git
+   git clone -b claude/hopeful-shannon-9q9hfz https://github.com/deathcloset/RobotMegaStructures.git
+   cd RobotMegaStructures
+   ```
+3. **Run the installer:**
+   ```bash
+   sudo bash install.sh
+   ```
+   It asks two things:
+   - **How testers reach it** — press **1** for a free auto-HTTPS address based on
+     your IP (no domain needed), or **2** if you own a domain pointed at the box.
+   - **A password** for testers.
+
+   Then it installs everything, opens the firewall, and starts the game.
+
+4. When it finishes it prints your **URL + username (`tester`) + password**. Share
+   those. First visit takes ~30s while the HTTPS certificate is issued, then it's
+   instant. Visit the URL → type the password → you're in and moving robots.
+
+**Updating later** (after new code lands):
+```bash
+git pull
+sudo bash runserver.sh
+```
+
+### Firewall / ports
+
+`install.sh` opens these for you with Ubuntu's firewall (`ufw`). For reference, or
+to do it by hand:
+```bash
+sudo ufw allow OpenSSH    # port 22 — KEEP this or you'll lock yourself out!
+sudo ufw allow 80/tcp     # http — needed to issue the HTTPS certificate
+sudo ufw allow 443/tcp    # https — the game itself
+sudo ufw enable
+sudo ufw status
+```
+The game server's own port **8080 stays closed** on purpose: it only listens on
+the machine itself, and Caddy talks to it internally. Nothing else needs opening.
+
+### Change or remove the password later
+
+Edit `/etc/caddy/Caddyfile` (the `basic_auth` block), then `sudo systemctl reload
+caddy`. Re-running `sudo bash install.sh` also lets you set a new one.
+
+---
+
+## For developers
+
+A pnpm + TypeScript monorepo. The binding constraint for this game is **egress,
+not CPU** (design doc §7.2), so **bytes/player/tick** is the north-star metric,
+instrumented from the first commit.
 
 ```
 packages/
   shared/   wire protocol + MessagePack codec + fixed-point math (used by all 3)
   server/   authoritative sim: tick loop, chunk, snapshotter, WS gateway, metrics
-  client/   PixiJS v8: pan/zoom camera, interpolation, input→intents, HUD
-  bot/      headless load + lag test harness (the doc's Phase 0 mandate)
-deploy/     single-box Ubuntu 24.04: Caddy (auto-TLS), systemd, provision/deploy
-scripts/    esbuild bundler (server/bot → one self-contained file)
+  client/   PixiJS v8: pan/zoom camera, interpolation, input->intents, HUD
+  bot/      headless load + lag test harness
+deploy/     templates for the hosting scripts
 ```
-
-The chunk is written as an **isolated, actor-shaped unit** (message-in/state-out,
-no I/O inside) so a later Elixir/Phoenix port — and Phase 1+ entity kinds — are
-mechanical, not a rewrite (doc §4.4/§4.6). Valkey and Postgres are **deliberately
-absent**: Phase 0 is in-memory; a `WorldRepo` interface marks where they slot in
-at Phase 2/3.
-
-## Prerequisites
-
-- **Node 22** (`.nvmrc`) · **pnpm 10** (`corepack enable`)
-
-## Quickstart
-
-```bash
-corepack enable
-pnpm install
-pnpm dev            # server on :8080, client on http://localhost:5173
-```
-
-Open `http://localhost:5173` in two tabs: click to move your robot; it moves in
-both tabs (server-authoritative). NPC robots wander so the site is never empty.
-
-### Useful scripts
 
 | Command | Does |
 |---|---|
-| `pnpm dev` | server + client with hot reload |
-| `pnpm dev:server` / `pnpm dev:client` | run one side |
+| `pnpm dev` | server (:8080) + client (:5173) with hot reload |
 | `pnpm typecheck` | `tsc --noEmit` across all packages |
-| `pnpm test` | Vitest (codec round-trip, fixed-point, movement, interpolation) |
+| `pnpm test` | Vitest (codec, fixed-point, movement, interpolation) |
 | `pnpm build` | bundle server + bot to single files; Vite-build the client |
 | `pnpm lint` / `pnpm lint:fix` | Biome |
-| `pnpm bot -- <args>` | run the load/lag harness (see below) |
+| `pnpm bot -- <args>` | load/lag harness |
 
-## The two Phase 0 experiments
+### The two Phase 0 experiments
 
-### 1. Smooth movement under ~1 s lag (prove the feel)
-
-The server can inject artificial outbound latency; the client renders behind the
-newest snapshot by an interpolation delay (`?interp=`, default 300 ms) anchored to
-server-stamped time, so motion stays smooth despite 2–5 Hz updates.
-
+**Smooth movement under ~1 s lag** — the server can inject artificial latency; the
+client renders behind the newest snapshot by an interpolation delay so motion stays
+smooth at 2–5 Hz:
 ```bash
-# server with 1s ± 100ms outbound lag, 4 Hz broadcast
-LAG_MS=1000 JITTER_MS=100 BROADCAST_HZ=4 pnpm dev:server
+LAG_MS=1000 JITTER_MS=100 pnpm dev:server     # then drag a robot in the client
 ```
-Then open the client and drag a robot: it should glide, just delayed by ~1 s — no
-teleporting or stutter. Sweep `BROADCAST_HZ` (2→5) and `?interp=` (200→500) to
-find the lowest broadcast rate that still feels smooth (that directly lowers
-egress). You can also inject lag purely client-side against a clean server:
-`http://localhost:5173/?lag=1000&jitter=100`.
+You can also inject lag purely client-side: `http://localhost:5173/?lag=1000&jitter=100`.
 
-### 2. Egress + the full-vs-delta lever (prove the cost)
-
-`SNAPSHOT_MODE` switches between full snapshots and position deltas — the single
-biggest egress lever (doc §7.2). A/B it under identical bot load:
-
+**Egress + the full-vs-delta lever** — `SNAPSHOT_MODE` switches full snapshots vs
+position deltas (the biggest egress lever, §7.2). A/B it under bot load:
 ```bash
-# terminal 1
-SNAPSHOT_MODE=full  pnpm dev:server
-# terminal 2
+SNAPSHOT_MODE=delta pnpm dev:server
 pnpm bot -- --url ws://localhost:8080/ws --count 200 --rate 2 --duration 30
 ```
-Watch **bytes/player/tick** in the server's 5 s log line (and `/metrics.json`),
-cross-checked by the bot reporter's per-client KB/s. Re-run with
-`SNAPSHOT_MODE=delta` and compare. Multiply your measured bytes/player/tick by
-target population to compare against the doc's ~1.6 Gbps wall at 10k players.
+Watch `bytes_per_player_per_tick` in the server's log line / `GET /metrics.json`,
+cross-checked by the bot reporter. Phase 0 has one chunk, so this measures honest
+worst-case fan-out; interest management's win shows up across many chunks in Phase 2.
 
-> Phase 0 has **one chunk**, so every robot is in view — this measures honest
-> worst-case fan-out. Interest management's win shows up across *many* chunks in
-> Phase 2.
+### Bot harness flags
 
-## Bot harness
+`--url` (`ws://localhost:8080/ws`) · `--count` (50) · `--rate` Hz (2) ·
+`--duration` s, 0=forever (0) · `--spawn` conns/sec ramp (50).
 
-```bash
-pnpm bot -- --url ws://localhost:8080/ws --count 200 --rate 2 --duration 30
-```
-| Flag | Default | Meaning |
-|---|---|---|
-| `--url` | `ws://localhost:8080/ws` | server endpoint (use `wss://…/ws` for a deployed box) |
-| `--count` | `50` | number of simulated clients |
-| `--rate` | `2` | move-intent rate per bot (Hz) |
-| `--duration` | `0` | seconds before auto-shutdown (`0` = run until Ctrl-C) |
-| `--spawn` | `50` | connection ramp per second (avoids thundering-herd) |
+### Server env knobs
 
-## Metrics
+`HOST`, `PORT`, `TICK_HZ` (10), `BROADCAST_HZ` (4), `SNAPSHOT_MODE`
+(`full`|`delta`), `KEYFRAME_INTERVAL_MS` (5000), `LAG_MS`/`JITTER_MS` (0),
+`SEED_ROBOTS` (8), `METRICS_LOG_MS` (5000). See [`.env.example`](./.env.example).
 
-The server exposes (same port as WS, kept off the public net in deploy):
+### Deliberately deferred (doors left open, per design doc §2.5/§4.6)
 
-- `GET /metrics.json` — JSON incl. `bytes_per_player_per_tick`, `egress_kbps`, `tick_ms_p95`, `broadcast_ms_p95`, `connections`
-- `GET /metrics` — Prometheus text
-- a one-line `pino`-style summary every `METRICS_LOG_MS`
-
-## Configuration (server env)
-
-`HOST`, `PORT`, `TICK_HZ` (10), `BROADCAST_HZ` (4), `SNAPSHOT_MODE` (`full`|`delta`),
-`KEYFRAME_INTERVAL_MS` (5000), `LAG_MS`/`JITTER_MS` (0), `SEED_ROBOTS` (8),
-`METRICS_LOG_MS` (5000). See [`.env.example`](./.env.example).
-
-## Deploy
-
-Single box, Ubuntu 24.04, Caddy auto-TLS + WebSocket passthrough, systemd, `ufw`.
-The server ships as one self-contained bundled file (no `node_modules` in prod).
-See [`deploy/README.md`](./deploy/README.md):
-
-```bash
-sudo DOMAIN=play.example.com bash deploy/provision.sh
-sudo bash deploy/deploy.sh
-```
-
-## Deliberately deferred (doors left open, per §2.5/§4.6)
-
-Valkey + Postgres (only the `WorldRepo` seam exists), grace-period reconnect &
-reservation TTLs (§4.7 — robot removal is isolated in one method), client-side
-prediction (Phase 0 answers "is interpolation alone enough?"), and all gameplay:
-piece state machine, two-robot assembly, multi-chunk + OSHA handoff, spectators,
-certs/crews, aliens, WebTransport, auth. The entity-neutral model, the
-`ChunkRegistry` indirection, the viewport-driven AOI filter, and the domain-event
-stream are the cheap hooks placed now so those land without a rewrite.
+Valkey + Postgres (only the `WorldRepo` seam exists; Valkey is the chosen cache for
+Phase 2), grace-period reconnect & reservation TTLs (§4.7), client-side prediction,
+and all gameplay: piece state machine, two-robot assembly, multi-chunk + OSHA
+handoff, spectators, certs/crews, aliens, WebTransport, accounts. The entity-neutral
+model, `ChunkRegistry` indirection, viewport AOI filter, and domain-event stream are
+the cheap hooks placed now so those land without a rewrite.
 
 ## License
 
