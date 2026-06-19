@@ -1,0 +1,20 @@
+{
+  "name": "@rms/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "node ../../scripts/bundle.mjs bot",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@rms/shared": "workspace:*",
+    "ws": "8.21.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
+  }
+}

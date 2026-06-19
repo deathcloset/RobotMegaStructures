@@ -1,0 +1,23 @@
+# Robot Mega Structures — single-box Phase 0 deploy.
+#
+# Replace example.com with your domain (A/AAAA record -> this box). Caddy
+# provisions and renews TLS automatically; `reverse_proxy` performs the HTTP
+# upgrade and tunnels the WebSocket transparently — no extra config needed.
+#
+# provision.sh substitutes your $DOMAIN into the copy at /etc/caddy/Caddyfile.
+
+example.com {
+	encode zstd gzip
+
+	# Authoritative sim server (WebSocket). Same-origin /ws -> Node on localhost.
+	reverse_proxy /ws 127.0.0.1:8080
+
+	# Static PixiJS client (Vite build output), with SPA fallback.
+	root * /srv/rms/client
+	file_server
+	try_files {path} /index.html
+}
+
+# NOTE: /metrics and /metrics.json are intentionally NOT proxied — they expose
+# operational data. Reach them via an SSH tunnel to 127.0.0.1:8080 instead:
+#   ssh -N -L 8080:127.0.0.1:8080 user@your-box   # then curl localhost:8080/metrics.json
