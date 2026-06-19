@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { APP_CODENAME, APP_VERSION } from '@rms/shared';
 import { Snapshotter } from './broadcast/Snapshotter';
 import { loadConfig } from './config';
 import { log } from './log';
@@ -21,7 +22,7 @@ const httpServer = createServer((req, res) => {
   if (handleMetrics(req, res, metrics, config)) return;
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('rms sim server ok\n');
+    res.end(`rms sim server ok — v${APP_VERSION} "${APP_CODENAME}"\n`);
     return;
   }
   res.writeHead(404);
@@ -47,6 +48,7 @@ const summary = setInterval(() => {
 
 httpServer.listen(config.port, config.host, () => {
   log.info('listening', {
+    version: `${APP_VERSION} "${APP_CODENAME}"`,
     host: config.host,
     port: config.port,
     tickHz: config.tickHz,

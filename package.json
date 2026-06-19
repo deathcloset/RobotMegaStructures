@@ -1,6 +1,6 @@
 {
   "name": "robot-mega-structures",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Robot Mega Structures — Phase 0 skeleton (prove the pipe).",

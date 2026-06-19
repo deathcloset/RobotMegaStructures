@@ -1,3 +1,7 @@
+/** Human-facing project version + milestone codename (see CHANGELOG.md). */
+export const APP_VERSION = '0.1.0';
+export const APP_CODENAME = 'First Light';
+
 /** Bumped on any wire-protocol change; C_HELLO is rejected on mismatch. */
 export const PROTOCOL_VERSION = 1;
 

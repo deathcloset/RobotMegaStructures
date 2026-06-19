@@ -4,6 +4,9 @@ A browser game where lots of little robots build an enormous structure together,
 joinable from a link on the cheapest phone. See the full vision in
 [`Robot-Mega-Structures-Design-Doc-v1.1.md`](./Robot-Mega-Structures-Design-Doc-v1.1.md).
 
+**Status: v0.1.0 "First Light" 🌅** (Phase 0 complete) — see [`CHANGELOG.md`](./CHANGELOG.md)
+for what shipped and [`HANDOFF.md`](./HANDOFF.md) to pick up development.
+
 **What works today (Phase 0):** a live game screen — robots wandering a site, with
 click-to-move, pan, and zoom — running on a real authoritative server. It's the
 foundation ("prove the pipe"); the build/crafting gameplay comes next. But you can
