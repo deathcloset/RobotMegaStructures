@@ -101,11 +101,26 @@ install -d /etc/rms
 [ -f /etc/rms/server.env ] || install -m 0640 -o rms -g rms deploy/server.env.example /etc/rms/server.env
 
 echo "==> Configuring HTTPS + password…"
-AUTH_HASH="$(caddy hash-password --plaintext "$PW")"
+# Hash the password with Caddy (robust across versions), and never continue with
+# an empty hash — that would produce an invalid Caddyfile and a dead web server.
+AUTH_HASH="$(caddy hash-password --plaintext "$PW" 2>/dev/null || true)"
+if [ -z "$AUTH_HASH" ]; then
+  AUTH_HASH="$(printf '%s' "$PW" | caddy hash-password 2>/dev/null || true)"
+fi
+if [ -z "$AUTH_HASH" ]; then
+  echo "ERROR: could not hash the password (caddy hash-password failed)." >&2
+  echo "Caddy version: $(caddy version 2>/dev/null || echo 'caddy not found')" >&2
+  exit 1
+fi
 sed -e "s|__SITE__|${SITE}|" \
     -e "s|__AUTHUSER__|${AUTH_USER}|" \
     -e "s|__AUTHHASH__|${AUTH_HASH}|" \
     deploy/Caddyfile.template > /etc/caddy/Caddyfile
+if ! caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile >/tmp/rms-caddy-validate.log 2>&1; then
+  echo "ERROR: the generated /etc/caddy/Caddyfile is invalid:" >&2
+  cat /tmp/rms-caddy-validate.log >&2
+  exit 1
+fi
 install -m 0644 deploy/rms-server.service /etc/systemd/system/rms-server.service
 systemctl daemon-reload
 systemctl enable rms-server >/dev/null 2>&1 || true
