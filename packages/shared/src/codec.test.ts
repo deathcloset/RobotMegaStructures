@@ -5,7 +5,8 @@ import {
   EntityKind,
   encodeMessage,
   MessageType,
-  RobotStatus,
+  PieceStatus,
+  RobotStatusBit,
 } from './index';
 
 // All position values below are multiples of 1/16 so they survive fixed-point
@@ -14,6 +15,7 @@ const samples: AnyMessage[] = [
   { t: MessageType.C_HELLO, protocolVersion: 1, displayName: 'bot-7' },
   { t: MessageType.C_HELLO, protocolVersion: 1 },
   { t: MessageType.C_INTENT_MOVE, tx: 123.5, ty: 0.0625 },
+  { t: MessageType.C_INTENT_INTERACT, targetId: 1_000_003 },
   { t: MessageType.C_PING, clientTime: 1_700_000_000 },
   { t: MessageType.C_VIEWPORT, cx: 100, cy: 200, halfW: 50, halfH: 40 },
   {
@@ -29,7 +31,17 @@ const samples: AnyMessage[] = [
     t: MessageType.S_SNAPSHOT_FULL,
     tick: 5,
     serverTime: 1000,
-    entities: [{ id: 1, kind: EntityKind.Robot, x: 10.25, y: 20.5, status: RobotStatus.Moving }],
+    entities: [
+      {
+        id: 1,
+        kind: EntityKind.Robot,
+        x: 10.25,
+        y: 20.5,
+        status: RobotStatusBit.Moving | RobotStatusBit.Carrying,
+      },
+      { id: 1_000_001, kind: EntityKind.Piece, x: 64, y: 64, status: PieceStatus.Placed },
+      { id: 2_000_001, kind: EntityKind.Resource, x: 32, y: 96, status: 0 },
+    ],
   },
   {
     t: MessageType.S_SNAPSHOT_DELTA,
@@ -56,7 +68,7 @@ describe('codec round-trip', () => {
       t: MessageType.S_SNAPSHOT_FULL,
       tick: 1,
       serverTime: 1,
-      entities: [{ id: 1, kind: EntityKind.Robot, x: 1, y: 1, status: RobotStatus.Idle }],
+      entities: [{ id: 1, kind: EntityKind.Robot, x: 1, y: 1, status: 0 }],
     });
     const zero = encodeMessage({
       t: MessageType.S_SNAPSHOT_FULL,

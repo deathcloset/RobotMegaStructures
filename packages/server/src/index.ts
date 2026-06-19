@@ -6,6 +6,7 @@ import { log } from './log';
 import { Metrics } from './metrics/Metrics';
 import { handleMetrics } from './metrics/metricsServer';
 import { WsGateway } from './net/WsGateway';
+import { seedContract } from './sim/blueprint';
 import { ChunkRegistry } from './sim/ChunkRegistry';
 import { Robot } from './sim/Robot';
 import { SimLoop } from './sim/SimLoop';
@@ -16,6 +17,7 @@ const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
 const chunks = new ChunkRegistry();
 
+seedContract(chunks.primary, repo);
 seedRobots();
 
 const httpServer = createServer((req, res) => {
@@ -57,6 +59,7 @@ httpServer.listen(config.port, config.host, () => {
     lagMs: config.lagMs,
     jitterMs: config.jitterMs,
     seedRobots: config.seedRobots,
+    contractPieces: chunks.primary.pieceCount,
   });
   loop.start();
 });

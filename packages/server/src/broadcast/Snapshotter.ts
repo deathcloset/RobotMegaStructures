@@ -45,7 +45,10 @@ export class Snapshotter {
     for (const e of visible) {
       seen.add(e.id);
       const prev = conn.lastSent.get(e.id);
-      if (prev === undefined) {
+      if (prev === undefined || prev.status !== e.status) {
+        // New, or a non-positional state change (piece placed, robot picked up /
+        // dropped a load). Restate the full entity — `updated` carries position
+        // only, so a status flip on a static piece would otherwise never ship.
         added.push(e);
       } else if (prev.x !== e.x || prev.y !== e.y) {
         updated.push({ id: e.id, x: e.x, y: e.y });
@@ -71,6 +74,6 @@ export class Snapshotter {
 
   private rememberSent(conn: Connection, visible: EntitySnapshot[]): void {
     conn.lastSent.clear();
-    for (const e of visible) conn.lastSent.set(e.id, { x: e.x, y: e.y });
+    for (const e of visible) conn.lastSent.set(e.id, { x: e.x, y: e.y, status: e.status });
   }
 }

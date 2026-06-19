@@ -25,8 +25,9 @@ export class Connection {
   viewHalfW = Number.POSITIVE_INFINITY;
   viewHalfH = Number.POSITIVE_INFINITY;
 
-  // Delta-mode baseline: last entity positions we sent this client.
-  readonly lastSent = new Map<number, { x: number; y: number }>();
+  // Delta-mode baseline: last entity state we sent this client (position +
+  // status, so non-positional changes are detectable — see Snapshotter).
+  readonly lastSent = new Map<number, { x: number; y: number; status: number }>();
   lastKeyframeAt = 0;
   lastTickSent = 0;
 

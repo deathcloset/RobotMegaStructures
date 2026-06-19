@@ -18,6 +18,55 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ---
 
+## [Unreleased] — "First Bolt" 🔩 — Phase 1 in progress
+
+**Phase 1: the build loop (prove the fun).** Slice 1 of 2 — the single-robot
+build loop, end to end. The version stays `0.1.0` until Phase 1 is complete (the
+two-robot weld lands in slice 2); the wire protocol bumps now.
+
+### Added
+- **Build pieces & resource depots** (`shared`): two new entity kinds (`Piece`,
+  `Resource`) on the existing entity-neutral snapshot path, plus a piece assembly
+  state machine (`PieceStatus`: ghost → placed for now; reserved/in_progress are
+  reserved for the two-robot weld). Robot `status` became a small bitfield so
+  "carrying" rides the wire with no extra field — egress per entity is unchanged.
+- **Interact intent** (`C_INTENT_INTERACT`): one context-resolved intent — the
+  server decides pickup vs deliver and never trusts the client (§4.2). Routed
+  through the existing single chokepoint, `Chunk.applyIntent`.
+- **The loop** (`server`): walk to a depot → pick up (carry) → walk to a ghost
+  piece → deliver → it turns placed. A small seeded contract (a 6-piece block
+  flanked by two depots); finishing it fires `ContractCompleted`.
+- **Build-loop domain events** (§6): `ResourcePickedUp`, `PiecePlaced` (with live
+  `placed`/`total`), `ContractCompleted`.
+- **Client**: renders ghost vs placed pieces, depots, and a carried-material
+  marker above a hauling robot; a tap resolves to grab / deliver / move by
+  context; HUD shows `pieces X/Y` and carry state; a "contract complete 🎉"
+  banner on completion.
+
+### Fixed
+- **Delta snapshots now ship non-positional state changes.** A placed piece never
+  moves, so the position-only delta path would have silently dropped its
+  ghost → placed flip; the delta now restates any entity whose `status` changed.
+
+### Protocol
+- `PROTOCOL_VERSION` → **2** (interact intent, piece/resource kinds, robot status
+  bitfield).
+
+### Proven
+- Unit (28 tests): pickup → carry → deliver → place, contract completion (and
+  that it can't fire twice), a move intent cancels a queued action, an empty-
+  handed deliver is a no-op, and the delta status-change ships.
+- Wire (built server, both snapshot modes): hello v2 → snapshot carries 6 pieces
+  + 2 depots → interacting a depot sets the carry bit → interacting a ghost emits
+  `PiecePlaced{placed:1,total:6}` and flips the piece to placed.
+
+### Next (slice 2, completes Phase 1)
+- The **two-robot weld** (one holds, one welds) with a reservation **TTL** and a
+  disconnect **grace period** (§4.7, §10) — cooperation under lag with no
+  deadlock when a partner drops. Version bumps to **v0.2.0 "First Bolt" 🔩** then.
+
+---
+
 ## v0.1.0 — "First Light" 🌅 — 2026-06-19
 
 **Phase 0: Skeleton / prove the pipe.** The first end-to-end working system —

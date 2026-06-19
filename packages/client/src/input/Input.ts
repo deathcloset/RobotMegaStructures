@@ -1,13 +1,15 @@
 import type { Camera } from '../render/Camera';
 
 export interface InputCallbacks {
-  onMoveIntent: (worldX: number, worldY: number) => void;
+  /** A tap (pointer down→up without dragging) at a world point. The caller
+   *  decides whether it's a move or an interact (it has the entity list). */
+  onTap: (worldX: number, worldY: number) => void;
 }
 
 /**
- * Pointer / wheel / touch → camera control + move intents. A tap that didn't
- * drag becomes a move intent; drags pan; wheel and two-finger pinch zoom toward
- * the cursor. Screen coords are CSS pixels (renderer runs at resolution 1).
+ * Pointer / wheel / touch → camera control + taps. A tap that didn't drag is
+ * reported to the caller; drags pan; wheel and two-finger pinch zoom toward the
+ * cursor. Screen coords are CSS pixels (renderer runs at resolution 1).
  */
 export class Input {
   private dragging = false;
@@ -75,7 +77,7 @@ export class Input {
     this.pointers.delete(e.pointerId);
     if (this.dragging && !this.moved && !wasTwo) {
       const w = this.camera.screenToWorld(e.clientX, e.clientY);
-      this.cb.onMoveIntent(w.x, w.y);
+      this.cb.onTap(w.x, w.y);
     }
     if (this.pointers.size < 2) this.pinchDist = 0;
     if (this.pointers.size === 0) this.dragging = false;

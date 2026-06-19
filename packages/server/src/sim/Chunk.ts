@@ -3,10 +3,13 @@ import {
   type ClientMessage,
   DomainEvent,
   type EntitySnapshot,
+  INTERACT_RANGE,
   MessageType,
-  RobotStatus,
+  PieceStatus,
   WORLD_SIZE,
 } from '@rms/shared';
+import type { Piece } from './Piece';
+import type { Resource } from './Resource';
 import type { Robot } from './Robot';
 
 export interface ChunkEvent {
@@ -25,7 +28,11 @@ export class Chunk {
   readonly id = CHUNK_ID;
   readonly size = WORLD_SIZE;
   private readonly robots = new Map<number, Robot>();
+  private readonly pieces = new Map<number, Piece>();
+  private readonly resources = new Map<number, Resource>();
   private readonly events: ChunkEvent[] = [];
+  private placed = 0;
+  private completed = false;
 
   addOccupant(robot: Robot): void {
     this.robots.set(robot.id, robot);
@@ -38,6 +45,16 @@ export class Chunk {
     }
   }
 
+  /** Seed a blueprint piece (ghost). Static for the contract's lifetime. */
+  addPiece(piece: Piece): void {
+    this.pieces.set(piece.id, piece);
+  }
+
+  /** Seed a resource depot. */
+  addResource(resource: Resource): void {
+    this.resources.set(resource.id, resource);
+  }
+
   getRobot(robotId: number): Robot | undefined {
     return this.robots.get(robotId);
   }
@@ -46,21 +63,109 @@ export class Chunk {
     return this.robots.size;
   }
 
+  /** Contract progress (§3) — pieces placed of the blueprint total. */
+  get pieceCount(): number {
+    return this.pieces.size;
+  }
+  get placedCount(): number {
+    return this.placed;
+  }
+  get isComplete(): boolean {
+    return this.completed;
+  }
+
   /** The single mutation entry point. Never trusts the client. */
   applyIntent(robotId: number, msg: ClientMessage): void {
-    if (msg.t !== MessageType.C_INTENT_MOVE) return;
     const robot = this.robots.get(robotId);
     if (!robot) return;
-    robot.setTarget(clamp(msg.tx, 0, this.size), clamp(msg.ty, 0, this.size));
+    if (msg.t === MessageType.C_INTENT_MOVE) {
+      // A manual move redirects the robot and cancels any queued build action.
+      robot.pendingAction = null;
+      robot.setTarget(clamp(msg.tx, 0, this.size), clamp(msg.ty, 0, this.size));
+    } else if (msg.t === MessageType.C_INTENT_INTERACT) {
+      this.applyInteract(robot, msg.targetId);
+    }
+  }
+
+  /** Queue a context-appropriate action: empty robots grab from a depot, loaded
+   *  robots deliver to a ghost piece. The server decides — the client can't lie. */
+  private applyInteract(robot: Robot, targetId: number): void {
+    if (!robot.carrying) {
+      const res = this.resources.get(targetId);
+      if (res) {
+        robot.setTarget(res.x, res.y);
+        robot.pendingAction = { kind: 'pickup', targetId };
+      }
+      return;
+    }
+    const piece = this.pieces.get(targetId);
+    if (piece && piece.status === PieceStatus.Ghost) {
+      robot.setTarget(piece.x, piece.y);
+      robot.pendingAction = { kind: 'deliver', targetId };
+    }
   }
 
   /** Advance the simulation one tick. NPCs (no owner) wander on arrival. */
   step(dt: number): void {
     for (const robot of this.robots.values()) {
       robot.step(dt);
-      if (robot.ownerConnectionId === null && robot.status === RobotStatus.Idle) {
+      this.resolvePending(robot);
+      if (robot.ownerConnectionId === null && !robot.moving && robot.pendingAction === null) {
         robot.setTarget(Math.random() * this.size, Math.random() * this.size);
       }
+    }
+  }
+
+  /** Execute a robot's queued action once it's within interaction range. */
+  private resolvePending(robot: Robot): void {
+    const action = robot.pendingAction;
+    if (action === null) return;
+
+    if (action.kind === 'pickup') {
+      const res = this.resources.get(action.targetId);
+      if (!res) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, res)) return;
+      if (!robot.carrying) {
+        robot.carrying = true;
+        this.events.push({
+          name: DomainEvent.ResourcePickedUp,
+          payload: { robotId: robot.id, resourceId: res.id },
+        });
+      }
+    } else {
+      const piece = this.pieces.get(action.targetId);
+      if (!piece) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, piece)) return;
+      // Re-check at execution time: a piece another robot already placed is a
+      // no-op (the robot keeps its load and can deliver elsewhere).
+      if (robot.carrying && piece.status === PieceStatus.Ghost) {
+        piece.status = PieceStatus.Placed;
+        robot.carrying = false;
+        this.placed += 1;
+        this.events.push({
+          name: DomainEvent.PiecePlaced,
+          payload: { pieceId: piece.id, placed: this.placed, total: this.pieces.size },
+        });
+        this.checkContractComplete();
+      }
+    }
+    robot.halt();
+    robot.pendingAction = null;
+  }
+
+  private checkContractComplete(): void {
+    if (!this.completed && this.pieces.size > 0 && this.placed >= this.pieces.size) {
+      this.completed = true;
+      this.events.push({
+        name: DomainEvent.ContractCompleted,
+        payload: { placed: this.placed, total: this.pieces.size },
+      });
     }
   }
 
@@ -68,6 +173,8 @@ export class Chunk {
   fullSnapshot(): EntitySnapshot[] {
     const out: EntitySnapshot[] = [];
     for (const robot of this.robots.values()) out.push(robot.toSnapshot());
+    for (const piece of this.pieces.values()) out.push(piece.toSnapshot());
+    for (const resource of this.resources.values()) out.push(resource.toSnapshot());
     return out;
   }
 
@@ -76,6 +183,10 @@ export class Chunk {
     if (this.events.length === 0) return [];
     return this.events.splice(0, this.events.length);
   }
+}
+
+function within(robot: Robot, e: { x: number; y: number }): boolean {
+  return Math.hypot(robot.x - e.x, robot.y - e.y) <= INTERACT_RANGE;
 }
 
 function clamp(v: number, lo: number, hi: number): number {

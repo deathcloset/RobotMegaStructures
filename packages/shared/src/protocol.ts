@@ -13,6 +13,7 @@ export enum MessageType {
   C_INTENT_MOVE = 2,
   C_PING = 3,
   C_VIEWPORT = 4,
+  C_INTENT_INTERACT = 5,
   // Server -> Client
   S_WELCOME = 10,
   S_SNAPSHOT_FULL = 11,
@@ -26,11 +27,20 @@ export interface CHello {
   protocolVersion: number;
   displayName?: string;
 }
-/** "Move toward this world point." The only gameplay intent in Phase 0. */
+/** "Move toward this world point." */
 export interface CIntentMove {
   t: MessageType.C_INTENT_MOVE;
   tx: number;
   ty: number;
+}
+/**
+ * "Act on this entity." The server decides pickup vs deliver from context
+ * (is the robot carrying? is the target a depot or a ghost piece?) — the client
+ * never asserts the outcome (§4.2). Walking to range happens server-side.
+ */
+export interface CIntentInteract {
+  t: MessageType.C_INTENT_INTERACT;
+  targetId: number;
 }
 export interface CPing {
   t: MessageType.C_PING;
@@ -82,6 +92,6 @@ export interface SEvent {
   payload?: unknown;
 }
 
-export type ClientMessage = CHello | CIntentMove | CPing | CViewport;
+export type ClientMessage = CHello | CIntentMove | CPing | CViewport | CIntentInteract;
 export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent;
 export type AnyMessage = ClientMessage | ServerMessage;

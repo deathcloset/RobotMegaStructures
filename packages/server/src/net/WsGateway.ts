@@ -84,6 +84,7 @@ export class WsGateway {
         conn.viewHalfH = msg.halfH;
         return;
       case MessageType.C_INTENT_MOVE:
+      case MessageType.C_INTENT_INTERACT:
         if (conn.robotId === null) return;
         this.chunks.primary.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;
@@ -103,8 +104,10 @@ export class WsGateway {
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
     const chunk = this.chunks.primary;
-    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 40;
-    const spawnY = chunk.size / 2 + (Math.random() * 2 - 1) * 40;
+    // Spawn below the blueprint, between it and the depots, so new players land
+    // looking at the work site.
+    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 60;
+    const spawnY = chunk.size * 0.55 + (Math.random() * 2 - 1) * 30;
     const robot = new Robot(robotId, this.repo.nextStableId('robot'), spawnX, spawnY, conn.id);
     chunk.addOccupant(robot);
     conn.robotId = robotId;
