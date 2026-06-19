@@ -100,6 +100,25 @@ install -d -o caddy -g caddy /srv/rms/client
 install -d /etc/rms
 [ -f /etc/rms/server.env ] || install -m 0640 -o rms -g rms deploy/server.env.example /etc/rms/server.env
 
+echo "==> Checking ports 80/443 are free for Caddy…"
+# A pre-installed web server (common on fresh hosts) will hold port 80/443 and
+# stop Caddy from starting. Offer to retire it.
+for svc in nginx apache2; do
+  if systemctl is-active --quiet "$svc" 2>/dev/null; then
+    echo "  '$svc' is already running and will take the ports the game needs (80/443)."
+    ans=""
+    read -rp "  Stop and disable $svc so the game can use them? [Y/n]: " ans || true
+    case "${ans:-Y}" in
+      [Yy]*)
+        systemctl stop "$svc" || true
+        systemctl disable "$svc" >/dev/null 2>&1 || true
+        echo "  $svc stopped and disabled." ;;
+      *)
+        echo "  WARNING: leaving $svc running — Caddy will not start until ports 80/443 are free." >&2 ;;
+    esac
+  fi
+done
+
 echo "==> Configuring HTTPS + password…"
 # Hash the password with Caddy (robust across versions), and never continue with
 # an empty hash — that would produce an invalid Caddyfile and a dead web server.
