@@ -5,16 +5,24 @@
 __SITE__ {
 	encode zstd gzip
 
-	# Password gate: testers get a browser login prompt before anything loads.
-	basic_auth {
+	# Password-gate everything EXCEPT the WebSocket. Browsers don't reliably send
+	# Basic-Auth credentials on a WebSocket handshake, and the page gate is what
+	# keeps testers out anyway — /ws only carries robot movement.
+	@needpass not path /ws
+	basic_auth @needpass {
 		__AUTHUSER__ __AUTHHASH__
 	}
 
-	# Authoritative sim server (WebSocket), same-origin /ws -> Node on localhost.
-	reverse_proxy /ws 127.0.0.1:8080
+	# WebSocket -> the sim server. In its own handle{} so the SPA try_files below
+	# cannot rewrite /ws to index.html before it gets proxied.
+	handle /ws {
+		reverse_proxy 127.0.0.1:8080
+	}
 
-	# The game client (static Vite build), with SPA fallback.
-	root * /srv/rms/client
-	file_server
-	try_files {path} /index.html
+	# Everything else: the static game client, with SPA fallback.
+	handle {
+		root * /srv/rms/client
+		file_server
+		try_files {path} /index.html
+	}
 }
