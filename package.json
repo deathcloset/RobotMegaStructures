@@ -1,0 +1,39 @@
+{
+  "name": "robot-mega-structures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Robot Mega Structures — Phase 0 skeleton (prove the pipe).",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @rms/server --filter @rms/client dev",
+    "dev:server": "pnpm --filter @rms/server dev",
+    "dev:client": "pnpm --filter @rms/client dev",
+    "build": "pnpm -r build",
+    "build:server": "node scripts/bundle.mjs server",
+    "build:bot": "node scripts/bundle.mjs bot",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "bot": "pnpm --filter @rms/bot start --"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@types/node": "26.0.0",
+    "esbuild": "0.28.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@biomejs/biome"
+    ]
+  }
+}

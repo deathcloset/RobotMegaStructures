@@ -1,0 +1,28 @@
+[Unit]
+Description=Robot Mega Structures sim server (Phase 0)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rms
+Group=rms
+EnvironmentFile=/etc/rms/server.env
+WorkingDirectory=/opt/rms/server
+ExecStart=/usr/bin/node /opt/rms/server/dist/index.js
+Restart=on-failure
+RestartSec=2
+
+# Hardening — the server writes nothing to disk (in-memory state, logs to journald).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

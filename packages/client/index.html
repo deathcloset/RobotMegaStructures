@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>Robot Mega Structures — Phase 0</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0e13;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        touch-action: none;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #hud {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.55);
+        color: #b8c4d0;
+        font-size: 12px;
+        line-height: 1.5;
+        border-radius: 6px;
+        white-space: pre;
+        pointer-events: none;
+        user-select: none;
+      }
+      #hint {
+        position: fixed;
+        bottom: 8px;
+        left: 8px;
+        color: #5f6b78;
+        font-size: 11px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud"></div>
+    <div id="hint">click / tap: move your robot · drag: pan · wheel / pinch: zoom</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
