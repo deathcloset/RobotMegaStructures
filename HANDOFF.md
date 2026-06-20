@@ -79,7 +79,8 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
 - ✅ **Surface-resource search + digging/mining** (slice 2, this branch) — renewable
   ore veins scattered around the planet; an empty-handed robot digs one for a load
   that feeds the build loop. Depots are now the convenient starter, veins the wider
-  story. (Next: let builder bots mine too; eventually below-surface digging.)
+  story, and a share of builders (`SEED_MINERS`) are **prospectors** that mine on
+  their own. (Eventually: below-surface digging.)
 - **Commandable AI crews / swarms** (builders are the seed) + a **delivery-swarm**
   robot type — set-and-forget far journeys that still need coordination.
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of

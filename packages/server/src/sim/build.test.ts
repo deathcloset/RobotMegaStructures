@@ -323,4 +323,25 @@ describe('surface mining (§ Phase 2)', () => {
     expect(piece.status).toBe(PieceStatus.Placed);
     expect(robot.carrying).toBe(false);
   });
+
+  it('a prospector builder sources from an ore vein autonomously', () => {
+    const chunk = new Chunk();
+    const builder = new Robot(-1, 'npc', 100, 200, true);
+    builder.isBuilder = true;
+    builder.prefersMining = true;
+    chunk.addOccupant(builder);
+    chunk.addDeposit(new Deposit(3_000_001, 'ore', 120, 120, DEPOSIT_MAX));
+    const piece = new Piece(1_000_001, 'p', 300, 120);
+    chunk.addPiece(piece);
+
+    // think → walk to the vein → dig → walk to the ghost → deliver (now advances so
+    // the dawdle + dig timers elapse).
+    let now = 0;
+    for (let i = 0; i < 600 && piece.status !== PieceStatus.Placed; i++) {
+      now += 100;
+      chunk.step(0.1, now);
+    }
+
+    expect(piece.status).toBe(PieceStatus.Placed); // built from mined ore, no depot
+  });
 });

@@ -28,6 +28,10 @@ export class Robot {
   /** An NPC that autonomously runs the build loop (vs. one that just wanders).
    *  The seed of the future commandable AI crew / swarm. */
   isBuilder = false;
+  /** A builder that prospects the planet's ore veins for material instead of using
+   *  the convenient depots (it falls back to a depot if no vein is available). The
+   *  seed of distinct robot roles for the crews/swarms slice. */
+  prefersMining = false;
   /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
    *  so AI bots are visibly less efficient than players. */
   nextActionAt = 0;

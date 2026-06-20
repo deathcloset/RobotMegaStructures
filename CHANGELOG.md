@@ -42,12 +42,17 @@ veins are the wider story (Ben's steer).
 - **Client**: veins render as faceted ore rocks whose size/brightness track their
   richness (a tapped-out vein dims until it regenerates); tap-to-mine rides the same
   context-resolved tap.
+- **Prospector builders**: a configurable share of the autonomous builders
+  (`SEED_MINERS`, default 2) now source from veins instead of depots — so the living
+  worksite prospects the planet on its own, not just the player. They fall back to a
+  depot if no vein has material; the seed of distinct robot roles for the crews slice.
 - **Protocol** → **6**: adds the ore-deposit entity kind (wire shape unchanged — it's
   another entity on the existing snapshot path).
-- **Proven**: unit (57 tests, +4) — vein extract/refill caps, a robot digging a load
-  + emitting a pickup, a tapped-out vein refusing to be mined, and mined material
-  completing a ghost. Wire (built server): 10 veins seeded; a client walked to the
-  nearest vein, mined it, and carried off a load (richness 6 → 5).
+- **Proven**: unit (58 tests, +5) — vein extract/refill caps, a robot digging a load
+  + emitting a pickup, a tapped-out vein refusing to be mined, mined material
+  completing a ghost, and a **prospector builder mining a vein and building from it
+  autonomously**. Wire (built server): a client mined a vein (richness 6 → 5); with
+  3 prospector bots, 3 of 10 veins were mined autonomously in ~24 s.
 
 ### Slice 1 — the wrapping world & surface aesthetic
 
@@ -96,9 +101,9 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
-- **Commandable AI crews/swarms** + a delivery-swarm robot type (builders are the
-  seed — and a natural next step is letting them mine too), and the **chunk grid +
-  OSHA handoff** (grow `ChunkRegistry` from one wide chunk to many; AOI is already
+- **Commandable AI crews/swarms** + a delivery-swarm robot type (builders, now with
+  distinct depot/prospector roles, are the seed), and the **chunk grid + OSHA
+  handoff** (grow `ChunkRegistry` from one wide chunk to many; AOI is already
   wrap-ready).
 
 ---

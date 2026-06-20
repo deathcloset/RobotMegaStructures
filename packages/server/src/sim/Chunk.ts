@@ -198,10 +198,20 @@ export class Chunk {
       return;
     }
     if (!robot.carrying) {
+      // Miners prospect the planet's veins; other builders use the convenient
+      // depots — each falls back to the other so a builder is never stuck empty.
+      const vein = this.nearestDeposit(robot.x, robot.y);
       const depot = this.nearestResource(robot.x, robot.y);
-      if (depot) {
+      const mine = robot.prefersMining ? vein : null;
+      if (mine) {
+        robot.setTarget(mine.x, mine.y);
+        robot.pendingAction = { kind: 'mine', targetId: mine.id };
+      } else if (depot) {
         robot.setTarget(depot.x, depot.y);
         robot.pendingAction = { kind: 'pickup', targetId: depot.id };
+      } else if (vein) {
+        robot.setTarget(vein.x, vein.y);
+        robot.pendingAction = { kind: 'mine', targetId: vein.id };
       }
     } else {
       const ghost = this.nearestGhost(robot.x, robot.y);
@@ -415,6 +425,21 @@ export class Chunk {
       if (d < bestDist) {
         bestDist = d;
         best = res;
+      }
+    }
+    return best;
+  }
+
+  /** Nearest ore vein that still has material (for the mining builders). */
+  private nearestDeposit(x: number, y: number): Deposit | null {
+    let best: Deposit | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const dep of this.deposits.values()) {
+      if (dep.amount < 1) continue;
+      const d = wrappedDistance(x, y, dep.x, dep.y, this.width);
+      if (d < bestDist) {
+        bestDist = d;
+        best = dep;
       }
     }
     return best;

@@ -60,6 +60,7 @@ httpServer.listen(config.port, config.host, () => {
     jitterMs: config.jitterMs,
     seedRobots: config.seedRobots,
     seedBuilders: config.seedBuilders,
+    seedMiners: config.seedMiners,
     contractPieces: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,
@@ -68,8 +69,8 @@ httpServer.listen(config.port, config.host, () => {
 });
 
 /** Seed NPC robots (negative ids) so a lone first player sees a living, working
- *  site: the first `seedBuilders` run the build loop autonomously; the rest just
- *  wander as ambiance. */
+ *  site: the first `seedBuilders` run the build loop autonomously (the first
+ *  `seedMiners` of those prospect the ore veins); the rest just wander as ambiance. */
 function seedRobots(): void {
   const chunk = chunks.primary;
   for (let i = 0; i < config.seedRobots; i++) {
@@ -86,6 +87,7 @@ function seedRobots(): void {
     if (i < config.seedBuilders) {
       robot.isBuilder = true;
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
+      robot.prefersMining = i < config.seedMiners; // some prospect the veins
     } else {
       robot.setTarget(Math.random() * chunk.width, chunk.groundY - Math.random() * 200);
     }
