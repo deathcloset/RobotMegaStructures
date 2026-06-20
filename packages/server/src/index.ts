@@ -1,11 +1,12 @@
 import { createServer } from 'node:http';
-import { APP_CODENAME, APP_VERSION } from '@rms/shared';
+import { APP_CODENAME, APP_VERSION, ROBOT_SPEED } from '@rms/shared';
 import { Snapshotter } from './broadcast/Snapshotter';
 import { loadConfig } from './config';
 import { log } from './log';
 import { Metrics } from './metrics/Metrics';
 import { handleMetrics } from './metrics/metricsServer';
 import { WsGateway } from './net/WsGateway';
+import { seedContract } from './sim/blueprint';
 import { ChunkRegistry } from './sim/ChunkRegistry';
 import { Robot } from './sim/Robot';
 import { SimLoop } from './sim/SimLoop';
@@ -16,6 +17,7 @@ const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
 const chunks = new ChunkRegistry();
 
+seedContract(chunks.primary, repo);
 seedRobots();
 
 const httpServer = createServer((req, res) => {
@@ -57,11 +59,16 @@ httpServer.listen(config.port, config.host, () => {
     lagMs: config.lagMs,
     jitterMs: config.jitterMs,
     seedRobots: config.seedRobots,
+    seedBuilders: config.seedBuilders,
+    contractPieces: chunks.primary.pieceCount,
+    gracePeriodMs: config.gracePeriodMs,
   });
   loop.start();
 });
 
-/** Seed NPC robots (negative ids) so a lone first player sees a living site. */
+/** Seed NPC robots (negative ids) so a lone first player sees a living, working
+ *  site: the first `seedBuilders` run the build loop autonomously; the rest just
+ *  wander as ambiance. */
 function seedRobots(): void {
   const chunk = chunks.primary;
   for (let i = 0; i < config.seedRobots; i++) {
@@ -70,9 +77,14 @@ function seedRobots(): void {
       repo.nextStableId('npc'),
       Math.random() * chunk.size,
       Math.random() * chunk.size,
-      null,
+      true,
     );
-    robot.setTarget(Math.random() * chunk.size, Math.random() * chunk.size);
+    if (i < config.seedBuilders) {
+      robot.isBuilder = true;
+      robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
+    } else {
+      robot.setTarget(Math.random() * chunk.size, Math.random() * chunk.size);
+    }
     chunk.addOccupant(robot);
   }
 }

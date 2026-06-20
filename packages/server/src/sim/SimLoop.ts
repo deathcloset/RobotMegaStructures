@@ -57,7 +57,7 @@ export class SimLoop {
     this.lastTickWall = start;
 
     // 1. advance simulation
-    for (const chunk of this.chunks.all()) chunk.step(dt);
+    for (const chunk of this.chunks.all()) chunk.step(dt, start);
     this.tick += 1;
 
     // 2. drain + broadcast domain events (the §6 first-class stream)

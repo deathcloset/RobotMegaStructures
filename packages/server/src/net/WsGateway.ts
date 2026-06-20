@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server as HttpServer } from 'node:http';
 import {
   type ClientMessage,
@@ -18,14 +19,21 @@ import { Connection } from './Connection';
 
 /**
  * Owns WebSocket connections: accept, hello/version-check, intent routing, and
- * lifecycle. The §4.7 grace-period/resume logic lands in onClose in Phase 1 —
- * kept in one method so deferring robot removal is a local change.
+ * lifecycle. Connection resilience (§4.7) lives here: each player robot carries a
+ * session token, a dropped owner's robot is *parked* for a grace window rather
+ * than deleted, and a reconnect presenting the token resumes the same robot
+ * (position + carried item intact). Reconnection is the common case on cheap
+ * phones, not an edge case.
  */
 export class WsGateway {
   private readonly wss: WebSocketServer;
   private readonly connections = new Map<number, Connection>();
   private nextConnId = 1;
   private nextRobotId = 1;
+  // Reconnect bookkeeping (§4.7).
+  private readonly sessions = new Map<string, number>(); // token -> robotId
+  private readonly robotTokens = new Map<number, string>(); // robotId -> token
+  private readonly graceTimers = new Map<number, NodeJS.Timeout>(); // robotId -> removal
 
   constructor(
     httpServer: HttpServer,
@@ -72,7 +80,7 @@ export class WsGateway {
     const now = Date.now();
     switch (msg.t) {
       case MessageType.C_HELLO:
-        this.onHello(conn, msg.protocolVersion, now);
+        this.onHello(conn, msg.protocolVersion, msg.sessionToken, now);
         return;
       case MessageType.C_PING:
         conn.send({ t: MessageType.S_PONG, clientTime: msg.clientTime, serverTime: now }, now);
@@ -84,6 +92,7 @@ export class WsGateway {
         conn.viewHalfH = msg.halfH;
         return;
       case MessageType.C_INTENT_MOVE:
+      case MessageType.C_INTENT_INTERACT:
         if (conn.robotId === null) return;
         this.chunks.primary.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;
@@ -93,22 +102,79 @@ export class WsGateway {
     }
   }
 
-  private onHello(conn: Connection, version: number, now: number): void {
+  private onHello(conn: Connection, version: number, token: string | undefined, now: number): void {
     if (conn.helloOk) return;
     if (version !== PROTOCOL_VERSION) {
       log.warn('protocol mismatch', { conn: conn.id, version, expected: PROTOCOL_VERSION });
       conn.close();
       return;
     }
+
+    // Resume path (§4.7): a known token whose robot is still around (parked or
+    // live) re-binds that robot to this connection instead of spawning anew.
+    if (token !== undefined && this.tryResume(conn, token, now)) return;
+
+    // Fresh spawn.
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
     const chunk = this.chunks.primary;
-    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 40;
-    const spawnY = chunk.size / 2 + (Math.random() * 2 - 1) * 40;
-    const robot = new Robot(robotId, this.repo.nextStableId('robot'), spawnX, spawnY, conn.id);
+    // Spawn below the blueprint, between it and the depots, so new players land
+    // looking at the work site.
+    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 60;
+    const spawnY = chunk.size * 0.55 + (Math.random() * 2 - 1) * 30;
+    const robot = new Robot(
+      robotId,
+      this.repo.nextStableId('robot'),
+      spawnX,
+      spawnY,
+      false,
+      conn.id,
+    );
     chunk.addOccupant(robot);
     conn.robotId = robotId;
 
+    const newToken = randomUUID();
+    this.sessions.set(newToken, robotId);
+    this.robotTokens.set(robotId, newToken);
+    this.sendWelcome(conn, robotId, newToken, false, now);
+    log.info('client joined', { conn: conn.id, robotId, conns: this.connections.size });
+  }
+
+  /** Re-bind an existing robot to a reconnecting owner. Returns false if the
+   *  token is unknown/stale (robot already swept), so the caller spawns fresh. */
+  private tryResume(conn: Connection, token: string, now: number): boolean {
+    const robotId = this.sessions.get(token);
+    if (robotId === undefined) return false;
+    const robot = this.chunks.primary.getRobot(robotId);
+    if (!robot) {
+      this.sessions.delete(token); // stale: robot expired during the grace window
+      return false;
+    }
+    this.cancelGrace(robotId);
+    // Claim ownership FIRST, then retire any stale connection still holding this
+    // robot — so that connection's (late, async) onClose sees the new owner and
+    // no-ops instead of re-parking a robot we've just reclaimed.
+    const prevConnId = robot.ownerConnectionId;
+    robot.ownerConnectionId = conn.id;
+    conn.robotId = robotId;
+    conn.helloOk = true;
+    if (prevConnId !== null && prevConnId !== conn.id) {
+      this.connections.get(prevConnId)?.close();
+    }
+    this.sendWelcome(conn, robotId, token, true, now);
+    this.broadcastEvent(DomainEvent.RobotReconnected, { robotId });
+    log.info('client resumed', { conn: conn.id, robotId, conns: this.connections.size });
+    return true;
+  }
+
+  private sendWelcome(
+    conn: Connection,
+    robotId: number,
+    token: string,
+    resumed: boolean,
+    now: number,
+  ): void {
+    const chunk = this.chunks.primary;
     conn.send(
       {
         t: MessageType.S_WELCOME,
@@ -118,23 +184,58 @@ export class WsGateway {
         chunkId: chunk.id,
         worldBounds: [0, 0, chunk.size, chunk.size],
         serverTime: now,
+        sessionToken: token,
+        resumed,
       },
       now,
     );
-    log.info('client joined', { conn: conn.id, robotId, conns: this.connections.size });
   }
 
   private onClose(conn: Connection): void {
     if (!this.connections.has(conn.id)) return;
     this.connections.delete(conn.id);
     this.metrics.connections = this.connections.size;
-    // Phase 0: remove the robot immediately. §4.7 grace-period/resume lands here
-    // in Phase 1 (defer this via a timer).
+    // §4.7 grace: don't vanish the robot. Park it (idle, still visible, carried
+    // item kept) and schedule removal; a reconnect within the window resumes it.
     if (conn.robotId !== null) {
-      this.chunks.primary.removeOccupant(conn.robotId);
-      this.broadcastEvent(DomainEvent.RobotDisconnected, { robotId: conn.robotId });
+      const robot = this.chunks.primary.getRobot(conn.robotId);
+      if (robot && robot.ownerConnectionId === conn.id) {
+        robot.ownerConnectionId = null;
+        robot.pendingAction = null;
+        robot.halt();
+        const robotId = conn.robotId;
+        this.cancelGrace(robotId);
+        this.graceTimers.set(
+          robotId,
+          setTimeout(() => this.finalizeRemoval(robotId), this.config.gracePeriodMs),
+        );
+      }
     }
     log.info('client left', { conn: conn.id, conns: this.connections.size });
+  }
+
+  /** Grace window elapsed without a reconnect — remove the parked robot for good. */
+  private finalizeRemoval(robotId: number): void {
+    this.graceTimers.delete(robotId);
+    const robot = this.chunks.primary.getRobot(robotId);
+    if (robot?.parked) {
+      this.chunks.primary.removeOccupant(robotId);
+      this.broadcastEvent(DomainEvent.RobotDisconnected, { robotId });
+      log.info('robot grace expired', { robotId });
+    }
+    const token = this.robotTokens.get(robotId);
+    if (token !== undefined) {
+      this.sessions.delete(token);
+      this.robotTokens.delete(robotId);
+    }
+  }
+
+  private cancelGrace(robotId: number): void {
+    const timer = this.graceTimers.get(robotId);
+    if (timer) {
+      clearTimeout(timer);
+      this.graceTimers.delete(robotId);
+    }
   }
 
   broadcastEvent(name: DomainEvent, payload: unknown): void {

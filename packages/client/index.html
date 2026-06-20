@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <title>Robot Mega Structures — Phase 0</title>
+    <title>Robot Mega Structures</title>
     <style>
       :root {
         color-scheme: dark;
@@ -46,12 +46,48 @@
         font-size: 11px;
         pointer-events: none;
       }
+      #banner {
+        position: fixed;
+        top: 18%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        padding: 14px 22px;
+        background: rgba(224, 162, 78, 0.92);
+        color: #1a1205;
+        font-size: 20px;
+        font-weight: 600;
+        border-radius: 10px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+        pointer-events: none;
+        user-select: none;
+      }
+      #reconnect {
+        position: fixed;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        padding: 8px 14px;
+        background: rgba(200, 70, 70, 0.92);
+        color: #fff;
+        font-size: 13px;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        cursor: pointer;
+        user-select: none;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <div id="hud"></div>
-    <div id="hint">click / tap: move your robot · drag: pan · wheel / pinch: zoom</div>
+    <div id="banner"></div>
+    <div id="reconnect"></div>
+    <div id="hint">
+      tap a depot to grab material, then tap a ghost block to build · tap ground:
+      move · drag: pan · wheel / pinch: zoom
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

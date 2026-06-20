@@ -1,27 +1,55 @@
-import { EntityKind, type EntitySnapshot, RobotStatus } from '@rms/shared';
+import { EntityKind, type EntitySnapshot, ROBOT_SPEED, RobotStatusBit } from '@rms/shared';
 import { advanceToward } from './movement';
+
+/** What a robot will do when it reaches its current target (§3 build loop). The
+ *  Chunk sets this from an interact intent and resolves it on arrival. */
+export type PendingAction =
+  | { kind: 'pickup'; targetId: number }
+  | { kind: 'deliver'; targetId: number }
+  | { kind: 'weld'; targetId: number };
 
 export class Robot {
   readonly id: number;
   /** Stable, permanent identity (§4.6). The wire uses the compact int `id`. */
   readonly stableId: string;
+  /** Server-seeded ambient robot (wanders) vs a player robot (controlled). */
+  readonly isNpc: boolean;
   x: number;
   y: number;
   targetX: number;
   targetY: number;
-  status: RobotStatus = RobotStatus.Idle;
-  /** Connection that controls this robot, or null for a server-seeded NPC. */
-  readonly ownerConnectionId: number | null;
+  /** In transit this tick (drives the Moving status bit). */
+  moving = false;
+  /** Hauling a resource toward a ghost piece (drives the Carrying status bit). */
+  carrying = false;
+  /** Queued build-loop action, resolved by the Chunk on arrival. */
+  pendingAction: PendingAction | null = null;
+  /** An NPC that autonomously runs the build loop (vs. one that just wanders).
+   *  The seed of the future commandable AI crew / swarm. */
+  isBuilder = false;
+  /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
+   *  so AI bots are visibly less efficient than players. */
+  nextActionAt = 0;
+  /** Weld piece this robot is currently holding/welding (§10). While engaged it
+   *  holds position and isn't reassigned; the Chunk's weld logic frees it. */
+  engagedPieceId: number | null = null;
+  /** Movement speed (world units/sec). Builders run a little slower than players. */
+  speed = ROBOT_SPEED;
+  /** Connection controlling this robot. Null for an NPC, or for a player robot
+   *  whose owner has dropped and is in the §4.7 grace window ("parked"). */
+  ownerConnectionId: number | null;
 
   constructor(
     id: number,
     stableId: string,
     x: number,
     y: number,
-    ownerConnectionId: number | null,
+    isNpc: boolean,
+    ownerConnectionId: number | null = null,
   ) {
     this.id = id;
     this.stableId = stableId;
+    this.isNpc = isNpc;
     this.x = x;
     this.y = y;
     this.targetX = x;
@@ -29,19 +57,38 @@ export class Robot {
     this.ownerConnectionId = ownerConnectionId;
   }
 
+  /** A live player at the controls (not an NPC, not parked mid-grace). */
+  get controlled(): boolean {
+    return !this.isNpc && this.ownerConnectionId !== null;
+  }
+
+  /** A player robot whose owner dropped — parked, reclaimable on reconnect (§4.7). */
+  get parked(): boolean {
+    return !this.isNpc && this.ownerConnectionId === null;
+  }
+
   setTarget(x: number, y: number): void {
     this.targetX = x;
     this.targetY = y;
   }
 
+  /** Park where it stands — used after a pending action, or on owner dropout. */
+  halt(): void {
+    this.targetX = this.x;
+    this.targetY = this.y;
+    this.moving = false;
+  }
+
   step(dt: number): void {
-    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt);
+    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed);
     this.x = r.x;
     this.y = r.y;
-    this.status = r.arrived ? RobotStatus.Idle : RobotStatus.Moving;
+    this.moving = !r.arrived;
   }
 
   toSnapshot(): EntitySnapshot {
-    return { id: this.id, kind: EntityKind.Robot, x: this.x, y: this.y, status: this.status };
+    const status =
+      (this.moving ? RobotStatusBit.Moving : 0) | (this.carrying ? RobotStatusBit.Carrying : 0);
+    return { id: this.id, kind: EntityKind.Robot, x: this.x, y: this.y, status };
   }
 }

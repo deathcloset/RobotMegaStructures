@@ -13,6 +13,7 @@ export enum MessageType {
   C_INTENT_MOVE = 2,
   C_PING = 3,
   C_VIEWPORT = 4,
+  C_INTENT_INTERACT = 5,
   // Server -> Client
   S_WELCOME = 10,
   S_SNAPSHOT_FULL = 11,
@@ -25,12 +26,24 @@ export interface CHello {
   t: MessageType.C_HELLO;
   protocolVersion: number;
   displayName?: string;
+  /** A prior session token (§4.7): if it still maps to a parked robot the server
+   *  resumes it (same id, position, carried item) instead of spawning fresh. */
+  sessionToken?: string;
 }
-/** "Move toward this world point." The only gameplay intent in Phase 0. */
+/** "Move toward this world point." */
 export interface CIntentMove {
   t: MessageType.C_INTENT_MOVE;
   tx: number;
   ty: number;
+}
+/**
+ * "Act on this entity." The server decides pickup vs deliver from context
+ * (is the robot carrying? is the target a depot or a ghost piece?) — the client
+ * never asserts the outcome (§4.2). Walking to range happens server-side.
+ */
+export interface CIntentInteract {
+  t: MessageType.C_INTENT_INTERACT;
+  targetId: number;
 }
 export interface CPing {
   t: MessageType.C_PING;
@@ -55,6 +68,12 @@ export interface SWelcome {
   chunkId: number;
   worldBounds: WorldBounds;
   serverTime: number;
+  /** Token to present on a later reconnect to resume this robot (§4.7). Also
+   *  signals whether this welcome was a fresh spawn or a resume (see `resumed`). */
+  sessionToken: string;
+  /** True when the server matched a presented token and resumed an existing
+   *  robot rather than spawning a new one — lets the client skip re-centering. */
+  resumed: boolean;
 }
 export interface SSnapshotFull {
   t: MessageType.S_SNAPSHOT_FULL;
@@ -82,6 +101,6 @@ export interface SEvent {
   payload?: unknown;
 }
 
-export type ClientMessage = CHello | CIntentMove | CPing | CViewport;
+export type ClientMessage = CHello | CIntentMove | CPing | CViewport | CIntentInteract;
 export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent;
 export type AnyMessage = ClientMessage | ServerMessage;
