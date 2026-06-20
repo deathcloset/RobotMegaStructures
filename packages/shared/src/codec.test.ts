@@ -17,6 +17,7 @@ const samples: AnyMessage[] = [
   { t: MessageType.C_HELLO, protocolVersion: 3, displayName: 'phone', sessionToken: 'sess_xyz' },
   { t: MessageType.C_INTENT_MOVE, tx: 123.5, ty: 0.0625 },
   { t: MessageType.C_INTENT_INTERACT, targetId: 1_000_003 },
+  { t: MessageType.C_INTENT_FLAG, tx: 2048, ty: 880 },
   { t: MessageType.C_PING, clientTime: 1_700_000_000 },
   { t: MessageType.C_VIEWPORT, cx: 100, cy: 200, halfW: 50, halfH: 40 },
   {

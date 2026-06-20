@@ -17,9 +17,14 @@ import {
   wrapX,
 } from '@rms/shared';
 import type { Deposit } from './Deposit';
+import { Flag } from './Flag';
 import type { Piece } from './Piece';
 import type { Resource } from './Resource';
 import type { Robot } from './Robot';
+
+/** Work-flag ids are derived from the owner's robot id (one flag per player) and
+ *  kept disjoint from the seeded-entity ranges in `blueprint.ts`. */
+const FLAG_ID_BASE = 4_000_000;
 
 export interface ChunkEvent {
   name: DomainEvent;
@@ -44,6 +49,8 @@ export class Chunk {
   private readonly pieces = new Map<number, Piece>();
   private readonly resources = new Map<number, Resource>();
   private readonly deposits = new Map<number, Deposit>();
+  /** Player work-flags, keyed by flag id (one per player; § Phase 2 crews). */
+  private readonly flags = new Map<number, Flag>();
   private readonly events: ChunkEvent[] = [];
   private placed = 0;
   private completed = false;
@@ -57,10 +64,42 @@ export class Chunk {
 
   removeOccupant(robotId: number): void {
     if (this.robots.delete(robotId)) {
+      this.clearFlag(robotId); // a departed player's work-flag goes with them
       // Any weld this robot was part of self-heals in advanceWelds (it'll see the
       // participant missing next tick and release/demote the piece).
       this.events.push({ name: DomainEvent.RobotLeftChunk, payload: { robotId } });
     }
+  }
+
+  /** Plant or move a player's single work-flag (on the surface). § Phase 2 crews. */
+  private placeFlag(robotId: number, x: number): void {
+    const id = FLAG_ID_BASE + robotId;
+    const y = this.groundY - 8; // flags sit on the surface
+    const existing = this.flags.get(id);
+    if (existing) {
+      existing.x = x;
+      existing.y = y;
+    } else {
+      this.flags.set(id, new Flag(id, robotId, x, y));
+    }
+  }
+
+  private clearFlag(robotId: number): void {
+    this.flags.delete(FLAG_ID_BASE + robotId);
+  }
+
+  /** Nearest work-flag to a point (the crew rallies to whichever flag is closest). */
+  private nearestFlag(x: number, y: number): Flag | null {
+    let best: Flag | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const flag of this.flags.values()) {
+      const d = wrappedDistance(x, y, flag.x, flag.y, this.width);
+      if (d < bestDist) {
+        bestDist = d;
+        best = flag;
+      }
+    }
+    return best;
   }
 
   /** Seed a blueprint piece (ghost). Static for the contract's lifetime. */
@@ -113,6 +152,9 @@ export class Chunk {
       robot.engagedPieceId = null; // a new command releases any current weld hold
       robot.mineUntil = null; // ...or abandons a dig in progress
       this.applyInteract(robot, msg.targetId);
+    } else if (msg.t === MessageType.C_INTENT_FLAG) {
+      // Plant or move this player's work-flag, snapped to the surface. X wraps.
+      this.placeFlag(robot.id, wrapX(msg.tx, this.width));
     }
   }
 
@@ -120,6 +162,12 @@ export class Chunk {
    *  lie: empty robots grab a depot or weld a piece awaiting a partner; loaded
    *  robots deliver to a ghost (placing it, or holding a weld piece). */
   private applyInteract(robot: Robot, targetId: number): void {
+    // Tapping your own work-flag picks it up (someone else's is a no-op).
+    const flag = this.flags.get(targetId);
+    if (flag) {
+      if (flag.ownerRobotId === robot.id) this.clearFlag(robot.id);
+      return;
+    }
     if (!robot.carrying) {
       const res = this.resources.get(targetId);
       if (res) {
@@ -198,8 +246,19 @@ export class Chunk {
       return;
     }
     if (!robot.carrying) {
-      // Miners prospect the planet's veins; other builders use the convenient
-      // depots — each falls back to the other so a builder is never stuck empty.
+      // A work-flag rallies the whole crew: mine the nearest vein to the flag,
+      // hauling back to the structure — the commandable-crew lever (§ Phase 2).
+      const flag = this.nearestFlag(robot.x, robot.y);
+      if (flag) {
+        const flagged = this.nearestDeposit(flag.x, flag.y);
+        if (flagged) {
+          robot.setTarget(flagged.x, flagged.y);
+          robot.pendingAction = { kind: 'mine', targetId: flagged.id };
+          return;
+        }
+      }
+      // No flag (or no vein near it): prospectors mine, other builders use the
+      // convenient depots — each falls back to the other so none is stuck empty.
       const vein = this.nearestDeposit(robot.x, robot.y);
       const depot = this.nearestResource(robot.x, robot.y);
       const mine = robot.prefersMining ? vein : null;
@@ -483,6 +542,7 @@ export class Chunk {
     for (const piece of this.pieces.values()) out.push(piece.toSnapshot());
     for (const resource of this.resources.values()) out.push(resource.toSnapshot());
     for (const deposit of this.deposits.values()) out.push(deposit.toSnapshot());
+    for (const flag of this.flags.values()) out.push(flag.toSnapshot());
     return out;
   }
 

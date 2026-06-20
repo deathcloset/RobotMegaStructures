@@ -31,6 +31,7 @@ export class Stage {
   private resourceTex!: Texture;
   private cargoTex!: Texture;
   private depositTex!: Texture;
+  private flagTex!: Texture;
   private readonly sprites = new Map<number, Sprite>();
   /** Small "held material" marker shown above a carrying robot. */
   private readonly cargo = new Map<number, Sprite>();
@@ -61,6 +62,18 @@ export class Stage {
     this.resourceTex = this.makeSquareTexture(34, 8);
     this.cargoTex = this.makeSquareTexture(12, 2);
     this.depositTex = this.makeSquareTexture(26, 4); // rendered as a faceted rock
+    this.flagTex = this.makeFlagTexture();
+  }
+
+  /** A work-flag: a slim pole with a pennant near the top. The texture's pole base
+   *  sits at the bottom so the sprite can be anchored to the ground. */
+  private makeFlagTexture(): Texture {
+    const g = new Graphics();
+    g.rect(0, 0, 2.5, 30).fill(0xffffff); // pole
+    g.poly([2.5, 1, 18, 6, 2.5, 12]).fill(0xffffff); // pennant
+    const tex = this.app.renderer.generateTexture(g);
+    g.destroy();
+    return tex;
   }
 
   get canvas(): HTMLCanvasElement {
@@ -197,6 +210,7 @@ export class Stage {
     if (kind === EntityKind.Piece || kind === EntityKind.WeldPiece) return this.pieceTex;
     if (kind === EntityKind.Resource) return this.resourceTex;
     if (kind === EntityKind.Deposit) return this.depositTex;
+    if (kind === EntityKind.Flag) return this.flagTex;
     return this.robotTex;
   }
 
@@ -241,6 +255,16 @@ export class Stage {
         sprite.tint = richness > 0 ? 0xc8884a : 0x55524a;
         sprite.alpha = richness > 0 ? 0.95 : 0.4;
         sprite.scale.set(0.55 + 0.1 * richness);
+        break;
+      }
+      case EntityKind.Flag: {
+        // Anchored to its base so the pole stands on the ground. Your own flag is
+        // bright (your robot's green); other players' flags are a muted amber.
+        sprite.anchor.set(0.08, 1);
+        const mine = e.status === this.myRobotId;
+        sprite.tint = mine ? 0x46e3a0 : 0xc9a24e;
+        sprite.alpha = mine ? 1 : 0.75;
+        sprite.scale.set(1);
         break;
       }
       default: {

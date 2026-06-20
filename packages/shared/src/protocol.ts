@@ -14,6 +14,7 @@ export enum MessageType {
   C_PING = 3,
   C_VIEWPORT = 4,
   C_INTENT_INTERACT = 5,
+  C_INTENT_FLAG = 6,
   // Server -> Client
   S_WELCOME = 10,
   S_SNAPSHOT_FULL = 11,
@@ -44,6 +45,14 @@ export interface CIntentMove {
 export interface CIntentInteract {
   t: MessageType.C_INTENT_INTERACT;
   targetId: number;
+}
+/** "Plant (or move) my work-flag here." Rallies the builder crew to work the area
+ *  around the flag (§ Phase 2 crews). One flag per player; tapping your own flag
+ *  picks it up. Y is snapped to the surface server-side. */
+export interface CIntentFlag {
+  t: MessageType.C_INTENT_FLAG;
+  tx: number;
+  ty: number;
 }
 export interface CPing {
   t: MessageType.C_PING;
@@ -107,6 +116,12 @@ export interface SEvent {
   payload?: unknown;
 }
 
-export type ClientMessage = CHello | CIntentMove | CPing | CViewport | CIntentInteract;
+export type ClientMessage =
+  | CHello
+  | CIntentMove
+  | CPing
+  | CViewport
+  | CIntentInteract
+  | CIntentFlag;
 export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent;
 export type AnyMessage = ClientMessage | ServerMessage;

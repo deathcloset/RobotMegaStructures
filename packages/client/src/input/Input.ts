@@ -4,7 +4,12 @@ export interface InputCallbacks {
   /** A tap (pointer down→up without dragging) at a world point. The caller
    *  decides whether it's a move or an interact (it has the entity list). */
   onTap: (worldX: number, worldY: number) => void;
+  /** A long-press (held in place) at a world point — plants the work-flag. */
+  onLongPress: (worldX: number, worldY: number) => void;
 }
+
+/** Hold this long without moving to register a long-press (plant a flag). */
+const LONG_PRESS_MS = 450;
 
 /**
  * Pointer / wheel / touch → camera control + taps. A tap that didn't drag is
@@ -18,6 +23,11 @@ export class Input {
   private lastY = 0;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private pinchDist = 0;
+  // Long-press (plant flag) tracking.
+  private longPressTimer: number | null = null;
+  private longPressed = false;
+  private downX = 0;
+  private downY = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -44,7 +54,30 @@ export class Input {
     this.moved = false;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
-    if (this.pointers.size === 2) this.pinchDist = this.currentPinchDist();
+    if (this.pointers.size === 2) {
+      this.pinchDist = this.currentPinchDist();
+      this.cancelLongPress(); // a second finger is a pinch, not a flag plant
+    } else if (this.pointers.size === 1) {
+      this.downX = e.clientX;
+      this.downY = e.clientY;
+      this.longPressed = false;
+      this.longPressTimer = window.setTimeout(() => this.fireLongPress(), LONG_PRESS_MS);
+    }
+  }
+
+  private fireLongPress(): void {
+    this.longPressTimer = null;
+    if (this.moved || this.pointers.size !== 1) return;
+    this.longPressed = true; // suppress the tap that the upcoming pointerup would fire
+    const w = this.camera.screenToWorld(this.downX, this.downY);
+    this.cb.onLongPress(w.x, w.y);
+  }
+
+  private cancelLongPress(): void {
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
   }
 
   private onMove(e: PointerEvent): void {
@@ -65,7 +98,10 @@ export class Input {
     if (this.dragging) {
       const dx = e.clientX - this.lastX;
       const dy = e.clientY - this.lastY;
-      if (Math.abs(dx) + Math.abs(dy) > 3) this.moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 3) {
+        this.moved = true;
+        this.cancelLongPress(); // a drag is a pan, not a flag plant
+      }
       this.camera.pan(dx, dy);
       this.lastX = e.clientX;
       this.lastY = e.clientY;
@@ -75,12 +111,16 @@ export class Input {
   private onUp(e: PointerEvent): void {
     const wasTwo = this.pointers.size === 2;
     this.pointers.delete(e.pointerId);
-    if (this.dragging && !this.moved && !wasTwo) {
+    this.cancelLongPress();
+    if (this.dragging && !this.moved && !wasTwo && !this.longPressed) {
       const w = this.camera.screenToWorld(e.clientX, e.clientY);
       this.cb.onTap(w.x, w.y);
     }
     if (this.pointers.size < 2) this.pinchDist = 0;
-    if (this.pointers.size === 0) this.dragging = false;
+    if (this.pointers.size === 0) {
+      this.dragging = false;
+      this.longPressed = false;
+    }
   }
 
   private onWheel(e: WheelEvent): void {

@@ -13,11 +13,11 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
 - **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
-  Phase 2 so far — **slice 1**: the world becomes a wide **side-scrolling planet
-  whose X axis wraps**, with a real surface/sky/atmosphere, the structure standing
-  on the ground and rising; **slice 2**: **surface mining** — ore veins scattered
-  around the planet you dig for material. Protocol **v6**. See CHANGELOG
-  "Unreleased". Remaining Phase 2 (crews/swarms, the chunk grid) is below.
+  Phase 2 so far — **slice 1**: a wide **side-scrolling planet whose X axis wraps**,
+  with a real surface/sky/atmosphere; **slice 2**: **surface mining** — ore veins you
+  dig for material; **slice 3**: **commandable crews** — long-press a **work-flag** to
+  rally the builder crew to mine that area. Protocol **v7**. See CHANGELOG
+  "Unreleased". Remaining Phase 2 (a delivery-swarm type, the chunk grid) is below.
 
 ## Run / operate
 
@@ -81,8 +81,10 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   that feeds the build loop. Depots are now the convenient starter, veins the wider
   story, and a share of builders (`SEED_MINERS`) are **prospectors** that mine on
   their own. (Eventually: below-surface digging.)
-- **Commandable AI crews / swarms** (builders are the seed) + a **delivery-swarm**
-  robot type — set-and-forget far journeys that still need coordination.
+- ✅ **Commandable AI crews** (slice 3, this branch) — long-press plants a
+  **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
+  mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
+  **delivery-swarm** robot type for set-and-forget far ferrying.
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of
   finished structures, the megastructures game-set, optional robot personalities).
 

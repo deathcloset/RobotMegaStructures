@@ -2,6 +2,7 @@ import {
   DEFAULT_CONTRACT_RESET_MS,
   DEPOSIT_MAX,
   DomainEvent,
+  EntityKind,
   MessageType,
   PieceStatus,
   WELD_DURATION_MS,
@@ -343,5 +344,59 @@ describe('surface mining (§ Phase 2)', () => {
     }
 
     expect(piece.status).toBe(PieceStatus.Placed); // built from mined ore, no depot
+  });
+});
+
+describe('commandable crews — work-flags (§ Phase 2)', () => {
+  const flagAt = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_FLAG, tx, ty }) as const;
+  const flagsOf = (chunk: Chunk) => chunk.fullSnapshot().filter((e) => e.kind === EntityKind.Flag);
+
+  it('plants a work-flag on the surface and moves it on a second drop', () => {
+    const chunk = new Chunk();
+    const robot = new Robot(1, 'r', 100, 200, false, 1);
+    chunk.addOccupant(robot);
+
+    chunk.applyIntent(robot.id, flagAt(500, 100));
+    let flags = flagsOf(chunk);
+    expect(flags).toHaveLength(1);
+    expect(flags[0]!.status).toBe(robot.id); // owner id rides as status
+    expect(flags[0]!.x).toBe(500);
+    expect(flags[0]!.y).toBe(chunk.groundY - 8); // snapped to the surface
+
+    chunk.applyIntent(robot.id, flagAt(900, 100));
+    flags = flagsOf(chunk);
+    expect(flags).toHaveLength(1); // moved, not duplicated
+    expect(flags[0]!.x).toBe(900);
+  });
+
+  it('picks the flag up when its owner taps it, and clears it when they leave', () => {
+    const chunk = new Chunk();
+    const robot = new Robot(1, 'r', 100, 200, false, 1);
+    chunk.addOccupant(robot);
+
+    chunk.applyIntent(robot.id, flagAt(500, 100));
+    chunk.applyIntent(robot.id, interact(4_000_000 + robot.id)); // tap own flag
+    expect(flagsOf(chunk)).toHaveLength(0);
+
+    chunk.applyIntent(robot.id, flagAt(500, 100));
+    chunk.removeOccupant(robot.id); // owner departs
+    expect(flagsOf(chunk)).toHaveLength(0);
+  });
+
+  it('rallies a builder to mine the vein by the flag, not the one nearest the builder', () => {
+    const chunk = new Chunk();
+    const builder = new Robot(-1, 'npc', 100, 820, true);
+    builder.isBuilder = true;
+    chunk.addOccupant(builder);
+    const near = new Deposit(3_000_001, 'near', 130, 820, DEPOSIT_MAX); // next to the builder
+    const far = new Deposit(3_000_002, 'far', 1500, 820, DEPOSIT_MAX); // by the flag
+    chunk.addDeposit(near);
+    chunk.addDeposit(far);
+    const commander = new Robot(1, 'p', 1480, 820, false, 1);
+    chunk.addOccupant(commander);
+    chunk.applyIntent(commander.id, flagAt(1500, 820));
+
+    chunk.step(0.1, 100); // one think tick
+    expect(builder.pendingAction).toEqual({ kind: 'mine', targetId: far.id });
   });
 });

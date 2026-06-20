@@ -44,6 +44,8 @@ function toWire(msg: AnyMessage): unknown[] {
       return [msg.t, toFixed16(msg.tx), toFixed16(msg.ty)];
     case MessageType.C_INTENT_INTERACT:
       return [msg.t, msg.targetId];
+    case MessageType.C_INTENT_FLAG:
+      return [msg.t, toFixed16(msg.tx), toFixed16(msg.ty)];
     case MessageType.C_PING:
       return [msg.t, msg.clientTime];
     case MessageType.C_VIEWPORT:
@@ -106,6 +108,8 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
       return { t, tx: fromFixed16(a[1]), ty: fromFixed16(a[2]) };
     case MessageType.C_INTENT_INTERACT:
       return { t, targetId: a[1] };
+    case MessageType.C_INTENT_FLAG:
+      return { t, tx: fromFixed16(a[1]), ty: fromFixed16(a[2]) };
     case MessageType.C_PING:
       return { t, clientTime: a[1] };
     case MessageType.C_VIEWPORT:

@@ -21,8 +21,30 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 ## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
 
 Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
-first). Still one wide chunk; the chunk **grid + OSHA handoff** and **commandable
-crews/swarms** are the slices still to come.
+first). Still one wide chunk; the **chunk grid + OSHA handoff** (and a dedicated
+delivery-swarm robot type) are the slices still to come.
+
+### Slice 3 — commandable crews 🚩
+
+Players can now **direct the builder crew**: long-press to plant a **work-flag** and
+the crew rallies to mine the area around it (set-and-forget — Ben's pick). The seed
+of the commandable AI crews/swarms in the design.
+
+- **Work-flag** (`EntityKind.Flag`) — one per player, planted/moved by a long-press
+  (new `C_INTENT_FLAG`); tap your own flag to pick it up; it clears automatically when
+  you leave. The owner's robot id rides as `status` so each client renders its own
+  flag distinctly (bright green) from others' (amber).
+- **Crew rally** — while any flag exists, builders mine the nearest vein to the
+  nearest flag (hauling back to the structure), so dropping a flag out by a rich (or
+  far) vein sends the whole crew to work it — "set-and-forget far journeys that still
+  need coordination." With no flag they fall back to their default roles.
+- **Client** — a long-press plants the flag (taps still move/grab/build, drags pan,
+  pinch zooms); flags render as a pole-and-pennant standing on the surface.
+- **Protocol** → **7**: adds the work-flag intent + flag entity kind.
+- **Proven**: unit (62 tests, +4) — flag plant/move/pick-up, a flag cleared when its
+  owner leaves, and a builder rallying to the flagged vein over the one next to it.
+  Wire (built server, default prospectors off): planting a flag by a far vein made the
+  crew mine *that* vein and only it.
 
 ### Slice 2 — surface mining ⛏️
 
@@ -101,10 +123,9 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
-- **Commandable AI crews/swarms** + a delivery-swarm robot type (builders, now with
-  distinct depot/prospector roles, are the seed), and the **chunk grid + OSHA
-  handoff** (grow `ChunkRegistry` from one wide chunk to many; AOI is already
-  wrap-ready).
+- A dedicated **delivery-swarm** robot type (set-and-forget ferrying), and the big
+  structural one: the **chunk grid + OSHA handoff** — grow `ChunkRegistry` from one
+  wide chunk to many (the AOI filter and wrap math are already ready for it).
 
 ---
 

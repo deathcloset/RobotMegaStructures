@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   await stage.init(document.getElementById('app')!);
   camera = new Camera(stage.screen.w, stage.screen.h);
 
-  new Input(stage.canvas, camera, { onTap });
+  new Input(stage.canvas, camera, { onTap, onLongPress });
 
   // (Re)connect → say hello, presenting our token so the server resumes our robot.
   conn.onOpen = () =>
@@ -158,10 +158,16 @@ function onTap(x: number, y: number): void {
   }
 }
 
+/** Plant (or move) the work-flag, rallying the builder crew to that area. */
+function onLongPress(x: number, y: number): void {
+  conn.send({ t: MessageType.C_INTENT_FLAG, tx: x, ty: y });
+}
+
 /** Can this robot act on entity `e` right now, given whether it's carrying? */
 function actionable(e: RenderEntity, carrying: boolean): boolean {
   if (e.kind === EntityKind.Resource) return !carrying; // grab from a depot
   if (e.kind === EntityKind.Deposit) return !carrying && e.status > 0; // mine an ore vein
+  if (e.kind === EntityKind.Flag) return e.status === myRobotId; // tap your own flag to pick it up
   if (e.kind === EntityKind.Piece) return carrying && e.status === PieceStatus.Ghost; // deliver
   if (e.kind === EntityKind.WeldPiece) {
     if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)

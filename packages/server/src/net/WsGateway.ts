@@ -94,6 +94,7 @@ export class WsGateway {
         return;
       case MessageType.C_INTENT_MOVE:
       case MessageType.C_INTENT_INTERACT:
+      case MessageType.C_INTENT_FLAG:
         if (conn.robotId === null) return;
         this.chunks.primary.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;

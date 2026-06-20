@@ -8,8 +8,9 @@ export const APP_CODENAME = 'First Bolt';
  *  v4 (Phase 1): adds the two-robot weld piece kind + reservation events.
  *  v5 (Phase 2): wide wrapping world — S_WELCOME carries groundY + wrapX and
  *               rectangular worldBounds (the world is a cylinder, see below).
- *  v6 (Phase 2): adds the ore-deposit entity kind (surface mining). */
-export const PROTOCOL_VERSION = 6;
+ *  v6 (Phase 2): adds the ore-deposit entity kind (surface mining).
+ *  v7 (Phase 2): adds the work-flag intent + flag entity kind (commandable crews). */
+export const PROTOCOL_VERSION = 7;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;

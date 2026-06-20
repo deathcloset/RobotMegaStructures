@@ -16,6 +16,10 @@ export enum EntityKind {
    *  so the client can show how full it is. The reason to roam the wide world;
    *  depots are the convenient starter, veins are the wider story. */
   Deposit = 4,
+  /** A player's work-flag (§ Phase 2 crews). Planted to rally the builder crew to
+   *  work that area; `status` carries the owner's robot id so a client can tell its
+   *  own flag from others'. */
+  Flag = 5,
 }
 
 /**
