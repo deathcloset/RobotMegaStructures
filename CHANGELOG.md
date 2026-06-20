@@ -20,9 +20,10 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ## [Unreleased] — "First Bolt" 🔩 — Phase 1 in progress
 
-**Phase 1: the build loop (prove the fun).** Slice 1 of 2 — the single-robot
-build loop, end to end. The version stays `0.1.0` until Phase 1 is complete (the
-two-robot weld lands in slice 2); the wire protocol bumps now.
+**Phase 1: the build loop (prove the fun).** The single-robot build loop end to
+end, plus connection resilience and a looping contract so it's pleasant to play
+on real phones. The version stays `0.1.0` until Phase 1 is complete (the
+two-robot weld is the last piece); the wire protocol bumps now.
 
 ### Added
 - **Build pieces & resource depots** (`shared`): two new entity kinds (`Piece`,
@@ -36,12 +37,25 @@ two-robot weld lands in slice 2); the wire protocol bumps now.
 - **The loop** (`server`): walk to a depot → pick up (carry) → walk to a ghost
   piece → deliver → it turns placed. A small seeded contract (a 6-piece block
   flanked by two depots); finishing it fires `ContractCompleted`.
+- **Looping contract**: a completed blueprint celebrates briefly, then resets to
+  fresh ghosts (`ContractStarted`) so building never dead-ends — the cheap
+  "another contract" retention bridge (§2.5).
+- **Connection resilience (§4.7)** — reconnection is the common case on cheap
+  phones, not an edge case:
+  - each player robot gets a **session token** (in `S_WELCOME`); the client saves
+    it per-tab and presents it on reconnect to **resume the same robot** —
+    position and carried item intact — instead of spawning a new one.
+  - a dropped owner's robot is **parked** for a grace window (default 2 min,
+    `GRACE_PERIOD_MS`) and only then removed, so a phone nap doesn't lose it.
+  - client **auto-reconnects** with backoff and nudges immediately when the tab
+    becomes visible / the network returns, with a "connection lost — tap to
+    retry" overlay.
 - **Build-loop domain events** (§6): `ResourcePickedUp`, `PiecePlaced` (with live
-  `placed`/`total`), `ContractCompleted`.
+  `placed`/`total`), `ContractCompleted`, `ContractStarted`, `RobotReconnected`.
 - **Client**: renders ghost vs placed pieces, depots, and a carried-material
   marker above a hauling robot; a tap resolves to grab / deliver / move by
-  context; HUD shows `pieces X/Y` and carry state; a "contract complete 🎉"
-  banner on completion.
+  context; HUD shows `pieces X/Y`, carry state, and live connection status;
+  contract banners on complete / new.
 
 ### Fixed
 - **Delta snapshots now ship non-positional state changes.** A placed piece never
@@ -49,20 +63,23 @@ two-robot weld lands in slice 2); the wire protocol bumps now.
   ghost → placed flip; the delta now restates any entity whose `status` changed.
 
 ### Protocol
-- `PROTOCOL_VERSION` → **2** (interact intent, piece/resource kinds, robot status
-  bitfield).
+- `PROTOCOL_VERSION` → **3** (v2: interact intent + piece/resource kinds + robot
+  status bitfield; v3: session token in hello/welcome for reconnect resume).
 
 ### Proven
-- Unit (28 tests): pickup → carry → deliver → place, contract completion (and
-  that it can't fire twice), a move intent cancels a queued action, an empty-
-  handed deliver is a no-op, and the delta status-change ships.
-- Wire (built server, both snapshot modes): hello v2 → snapshot carries 6 pieces
+- Unit (31 tests): pickup → carry → deliver → place, contract completion (and
+  that it can't fire twice), the contract loop reset, a move intent cancels a
+  queued action, an empty-handed deliver is a no-op, the delta status-change
+  ships, and a parked robot holds position + keeps its load.
+- Wire (built server, both snapshot modes): hello v3 → snapshot carries 6 pieces
   + 2 depots → interacting a depot sets the carry bit → interacting a ghost emits
   `PiecePlaced{placed:1,total:6}` and flips the piece to placed.
+- Wire reconnect: drop mid-carry → reconnect with the token → **same robot
+  resumed** (`resumed=true`), position and carried item intact.
 
-### Next (slice 2, completes Phase 1)
-- The **two-robot weld** (one holds, one welds) with a reservation **TTL** and a
-  disconnect **grace period** (§4.7, §10) — cooperation under lag with no
+### Next (completes Phase 1)
+- The **two-robot weld** (one holds, one welds) with a reservation **TTL** built
+  on this same grace mechanism (§4.7, §10) — cooperation under lag with no
   deadlock when a partner drops. Version bumps to **v0.2.0 "First Bolt" 🔩** then.
 
 ---

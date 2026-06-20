@@ -11,6 +11,8 @@ export class Robot {
   readonly id: number;
   /** Stable, permanent identity (§4.6). The wire uses the compact int `id`. */
   readonly stableId: string;
+  /** Server-seeded ambient robot (wanders) vs a player robot (controlled). */
+  readonly isNpc: boolean;
   x: number;
   y: number;
   targetX: number;
@@ -21,18 +23,21 @@ export class Robot {
   carrying = false;
   /** Queued build-loop action, resolved by the Chunk on arrival. */
   pendingAction: PendingAction | null = null;
-  /** Connection that controls this robot, or null for a server-seeded NPC. */
-  readonly ownerConnectionId: number | null;
+  /** Connection controlling this robot. Null for an NPC, or for a player robot
+   *  whose owner has dropped and is in the §4.7 grace window ("parked"). */
+  ownerConnectionId: number | null;
 
   constructor(
     id: number,
     stableId: string,
     x: number,
     y: number,
-    ownerConnectionId: number | null,
+    isNpc: boolean,
+    ownerConnectionId: number | null = null,
   ) {
     this.id = id;
     this.stableId = stableId;
+    this.isNpc = isNpc;
     this.x = x;
     this.y = y;
     this.targetX = x;
@@ -40,12 +45,22 @@ export class Robot {
     this.ownerConnectionId = ownerConnectionId;
   }
 
+  /** A live player at the controls (not an NPC, not parked mid-grace). */
+  get controlled(): boolean {
+    return !this.isNpc && this.ownerConnectionId !== null;
+  }
+
+  /** A player robot whose owner dropped — parked, reclaimable on reconnect (§4.7). */
+  get parked(): boolean {
+    return !this.isNpc && this.ownerConnectionId === null;
+  }
+
   setTarget(x: number, y: number): void {
     this.targetX = x;
     this.targetY = y;
   }
 
-  /** Park where it stands — used after completing a pending action. */
+  /** Park where it stands — used after a pending action, or on owner dropout. */
   halt(): void {
     this.targetX = this.x;
     this.targetY = this.y;

@@ -1,6 +1,7 @@
 import {
   CHUNK_ID,
   type ClientMessage,
+  DEFAULT_CONTRACT_RESET_MS,
   DomainEvent,
   type EntitySnapshot,
   INTERACT_RANGE,
@@ -33,6 +34,8 @@ export class Chunk {
   private readonly events: ChunkEvent[] = [];
   private placed = 0;
   private completed = false;
+  /** When the contract finished — the reset countdown anchor (null until done). */
+  private completedAt: number | null = null;
 
   addOccupant(robot: Robot): void {
     this.robots.set(robot.id, robot);
@@ -105,14 +108,35 @@ export class Chunk {
     }
   }
 
-  /** Advance the simulation one tick. NPCs (no owner) wander on arrival. */
-  step(dt: number): void {
+  /** Advance the simulation one tick. Controlled robots resolve queued build
+   *  actions; NPCs wander on arrival; parked (dropped-owner) robots hold still
+   *  until reclaimed or removed (§4.7). `now` drives the contract reset clock. */
+  step(dt: number, now: number): void {
     for (const robot of this.robots.values()) {
       robot.step(dt);
-      this.resolvePending(robot);
-      if (robot.ownerConnectionId === null && !robot.moving && robot.pendingAction === null) {
+      if (robot.controlled) {
+        this.resolvePending(robot);
+      } else if (robot.isNpc && !robot.moving) {
         robot.setTarget(Math.random() * this.size, Math.random() * this.size);
       }
+    }
+    this.advanceContract(now);
+  }
+
+  /** Once a contract completes, hold the celebration briefly, then reset the
+   *  blueprint to fresh ghosts so building loops (§2.5 "another contract"). */
+  private advanceContract(now: number): void {
+    if (!this.completed) return;
+    if (this.completedAt === null) {
+      this.completedAt = now;
+      return;
+    }
+    if (now - this.completedAt >= DEFAULT_CONTRACT_RESET_MS) {
+      for (const piece of this.pieces.values()) piece.status = PieceStatus.Ghost;
+      this.placed = 0;
+      this.completed = false;
+      this.completedAt = null;
+      this.events.push({ name: DomainEvent.ContractStarted, payload: { total: this.pieces.size } });
     }
   }
 

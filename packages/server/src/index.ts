@@ -60,6 +60,7 @@ httpServer.listen(config.port, config.host, () => {
     jitterMs: config.jitterMs,
     seedRobots: config.seedRobots,
     contractPieces: chunks.primary.pieceCount,
+    gracePeriodMs: config.gracePeriodMs,
   });
   loop.start();
 });
@@ -73,7 +74,7 @@ function seedRobots(): void {
       repo.nextStableId('npc'),
       Math.random() * chunk.size,
       Math.random() * chunk.size,
-      null,
+      true,
     );
     robot.setTarget(Math.random() * chunk.size, Math.random() * chunk.size);
     chunk.addOccupant(robot);

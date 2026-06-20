@@ -3,8 +3,9 @@ export const APP_VERSION = '0.1.0';
 export const APP_CODENAME = 'First Light';
 
 /** Bumped on any wire-protocol change; C_HELLO is rejected on mismatch.
- *  v2 (Phase 1): adds the interact intent + piece/resource entity kinds. */
-export const PROTOCOL_VERSION = 2;
+ *  v2 (Phase 1): adds the interact intent + piece/resource entity kinds.
+ *  v3 (Phase 1): adds the session token for reconnect/resume (§4.7). */
+export const PROTOCOL_VERSION = 3;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;
@@ -33,3 +34,12 @@ export const DEFAULT_KEYFRAME_INTERVAL_MS = 5000;
 
 /** Client interpolation delay (ms) — turns 2–5 Hz into smooth motion (§7.4). */
 export const DEFAULT_INTERP_DELAY_MS = 300;
+
+/** Disconnect grace window (ms): a dropped robot stays parked and reclaimable —
+ *  position + carried item intact — this long before removal (§4.7). The cheap-
+ *  phone reality is that sockets drop routinely, so this is normal traffic. */
+export const DEFAULT_GRACE_PERIOD_MS = 120_000;
+
+/** After a contract completes, pause this long (the celebration) before the
+ *  blueprint resets to fresh ghosts so building loops (§2.5 "another contract"). */
+export const DEFAULT_CONTRACT_RESET_MS = 6000;

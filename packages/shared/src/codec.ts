@@ -39,7 +39,7 @@ export function encodeMessage(msg: AnyMessage): Uint8Array<ArrayBuffer> {
 function toWire(msg: AnyMessage): unknown[] {
   switch (msg.t) {
     case MessageType.C_HELLO:
-      return [msg.t, msg.protocolVersion, msg.displayName ?? null];
+      return [msg.t, msg.protocolVersion, msg.displayName ?? null, msg.sessionToken ?? null];
     case MessageType.C_INTENT_MOVE:
       return [msg.t, toFixed16(msg.tx), toFixed16(msg.ty)];
     case MessageType.C_INTENT_INTERACT:
@@ -63,6 +63,8 @@ function toWire(msg: AnyMessage): unknown[] {
         msg.chunkId,
         msg.worldBounds.map(toFixed16),
         msg.serverTime,
+        msg.sessionToken,
+        msg.resumed,
       ];
     case MessageType.S_SNAPSHOT_FULL:
       return [msg.t, msg.tick, msg.serverTime, msg.entities.map(entityToWire)];
@@ -92,7 +94,12 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
   const t = a[0] as MessageType;
   switch (t) {
     case MessageType.C_HELLO:
-      return { t, protocolVersion: a[1], displayName: a[2] ?? undefined };
+      return {
+        t,
+        protocolVersion: a[1],
+        displayName: a[2] ?? undefined,
+        sessionToken: a[3] ?? undefined,
+      };
     case MessageType.C_INTENT_MOVE:
       return { t, tx: fromFixed16(a[1]), ty: fromFixed16(a[2]) };
     case MessageType.C_INTENT_INTERACT:
@@ -116,6 +123,8 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
         chunkId: a[4],
         worldBounds: (a[5] as number[]).map(fromFixed16) as unknown as WorldBounds,
         serverTime: a[6],
+        sessionToken: a[7],
+        resumed: a[8],
       };
     case MessageType.S_SNAPSHOT_FULL:
       return {

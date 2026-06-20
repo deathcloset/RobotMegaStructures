@@ -26,6 +26,9 @@ export interface CHello {
   t: MessageType.C_HELLO;
   protocolVersion: number;
   displayName?: string;
+  /** A prior session token (§4.7): if it still maps to a parked robot the server
+   *  resumes it (same id, position, carried item) instead of spawning fresh. */
+  sessionToken?: string;
 }
 /** "Move toward this world point." */
 export interface CIntentMove {
@@ -65,6 +68,12 @@ export interface SWelcome {
   chunkId: number;
   worldBounds: WorldBounds;
   serverTime: number;
+  /** Token to present on a later reconnect to resume this robot (§4.7). Also
+   *  signals whether this welcome was a fresh spawn or a resume (see `resumed`). */
+  sessionToken: string;
+  /** True when the server matched a presented token and resumed an existing
+   *  robot rather than spawning a new one — lets the client skip re-centering. */
+  resumed: boolean;
 }
 export interface SSnapshotFull {
   t: MessageType.S_SNAPSHOT_FULL;

@@ -37,32 +37,39 @@ The live box is cloned on branch `claude/hopeful-shannon-9q9hfz` (now merged to
 Smallest fun slice that turns wandering dots into a game, split into two
 deployable slices:
 
-**Slice 1 — single-robot build loop (DONE, on branch `claude/dreamy-cray-20xncu`, in review):**
+**DONE so far (on branch `claude/dreamy-cray-20xncu`, PR #2, played live & in review):**
 1. ✅ **Ghost blueprint** — a 6-piece block forming a small structure.
 2. ✅ **Resources** — robot grabs from a depot and visibly carries material.
-3. ✅ **Assembly** — deliver → piece goes `ghost → placed`; HUD shows `pieces X/Y`
-   and a "contract complete 🎉" banner fires on completion.
+3. ✅ **Assembly** — deliver → piece goes `ghost → placed`; HUD `pieces X/Y` +
+   "contract complete 🎉" banner.
+4. ✅ **Looping contract** — completion celebrates, then resets to fresh ghosts
+   (`ContractStarted`) so it never dead-ends (§2.5).
+5. ✅ **Connection resilience (§4.7)** — session token in `S_WELCOME`; reconnect
+   presents it to **resume the same robot** (position + carried item intact); a
+   dropped owner's robot is **parked** for a grace window (`GRACE_PERIOD_MS`,
+   default 2 min) before removal; client auto-reconnects + nudges on tab-visible /
+   online, with a tap-to-retry overlay.
 
 How it works: one `C_INTENT_INTERACT` (server resolves pickup vs deliver by
 context); pieces/resources are new `EntityKind`s on the same snapshot path; robot
-`status` is now a bitfield (`Moving|Carrying`); build-loop `DomainEvent`s
-(`ResourcePickedUp`, `PiecePlaced`, `ContractCompleted`) ride `S_EVENT`. Protocol
-bumped to **v2**. Delta snapshots now also ship status changes (a placed piece
-doesn't move). Version stays 0.1.0 until slice 2 lands.
+`status` is a bitfield (`Moving|Carrying`); build-loop `DomainEvent`s ride
+`S_EVENT`. Protocol at **v3** (interact intent + entity kinds @ v2; session token
+@ v3). Delta snapshots also ship status changes (a placed piece doesn't move).
+Robots now carry `isNpc` (wander) vs controlled vs `parked` (dropped, awaiting
+return). Version stays 0.1.0 until the weld lands.
 
-**Slice 2 — two-robot weld (NEXT, completes Phase 1):**
-4. **One two-robot piece** (hold + weld) — the cooperation-under-lag test, with a
-   reservation **TTL** so a dropped partner releases it, designed together with
-   the disconnect **grace period** (design doc §4.7, §10). This is where the
-   `PieceStatus.Reserved`/`InProgress` states (already defined) and the
-   `WsGateway.onClose` grace-period seam get used.
+**LAST PIECE — two-robot weld (NEXT, completes Phase 1 → v0.2.0):**
+6. **One two-robot piece** (hold + weld) — the cooperation-under-lag test, with a
+   reservation **TTL** so a dropped partner releases it. The grace mechanism it
+   pairs with (§4.7, §10) now exists, so this is the focused remaining work.
 
-Hooks still in place for slice 2 (placed in Phase 0/1 on purpose):
+Hooks in place for it:
 - `PieceStatus.Reserved` / `InProgress` already defined (entities.ts)
 - the `DomainEvent` catalogue + `S_EVENT` channel — reserve `PieceReserved`,
   `PieceReservationExpired` next
 - single intent chokepoint (`Chunk.applyIntent`) — the weld intent slots in here
-- `gracePeriodMs`-shaped seam: robot removal isolated in `WsGateway.onClose`
+- grace-period machinery (token sessions + `graceTimers` + parking) is live in
+  `WsGateway`; a piece reservation TTL is the same shape applied to pieces
 
 ## Gotchas we learned (don't re-discover these)
 

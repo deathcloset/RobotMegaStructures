@@ -1,4 +1,9 @@
-import { DEFAULT_BROADCAST_HZ, DEFAULT_KEYFRAME_INTERVAL_MS, DEFAULT_TICK_HZ } from '@rms/shared';
+import {
+  DEFAULT_BROADCAST_HZ,
+  DEFAULT_GRACE_PERIOD_MS,
+  DEFAULT_KEYFRAME_INTERVAL_MS,
+  DEFAULT_TICK_HZ,
+} from '@rms/shared';
 
 export type SnapshotMode = 'full' | 'delta';
 
@@ -13,6 +18,7 @@ export interface ServerConfig {
   jitterMs: number;
   seedRobots: number;
   metricsLogMs: number;
+  gracePeriodMs: number;
 }
 
 function num(name: string, fallback: number): number {
@@ -44,5 +50,6 @@ export function loadConfig(): ServerConfig {
     jitterMs: num('JITTER_MS', 0),
     seedRobots: num('SEED_ROBOTS', 8),
     metricsLogMs: num('METRICS_LOG_MS', 5000),
+    gracePeriodMs: num('GRACE_PERIOD_MS', DEFAULT_GRACE_PERIOD_MS),
   };
 }

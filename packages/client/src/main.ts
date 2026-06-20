@@ -10,7 +10,7 @@ import {
 } from '@rms/shared';
 import { Hud } from './hud/Hud';
 import { Input } from './input/Input';
-import { Connection } from './net/Connection';
+import { Connection, type ConnStatus } from './net/Connection';
 import { Camera } from './render/Camera';
 import { Stage } from './render/Stage';
 import { ServerClock } from './world/clock';
@@ -18,6 +18,9 @@ import { EntityStore, type RenderEntity } from './world/EntityStore';
 
 /** World-unit radius around a tap within which we grab/deliver instead of move. */
 const TAP_PICK_RANGE = 60;
+/** Per-tab session token (§4.7). sessionStorage keeps it across reloads but is
+ *  per-tab, so two tabs can't fight over one robot. */
+const TOKEN_KEY = 'rms.sessionToken';
 
 const params = new URLSearchParams(location.search);
 const lagMs = num(params.get('lag'), 0);
@@ -31,9 +34,11 @@ const clock = new ServerClock();
 const conn = new Connection(wsUrl, lagMs, jitterMs);
 const hud = new Hud(document.getElementById('hud')!);
 const banner = document.getElementById('banner');
+const reconnectEl = document.getElementById('reconnect');
 
 let camera: Camera;
 let myRobotId: number | null = null;
+let sessionToken: string | undefined = loadToken();
 let lastViewportSent = 0;
 let lastPingAt = 0;
 // Most recently rendered entities — the hit-test set for taps.
@@ -58,9 +63,21 @@ async function main(): Promise<void> {
 
   new Input(stage.canvas, camera, { onTap });
 
-  conn.onOpen = () => conn.send({ t: MessageType.C_HELLO, protocolVersion: PROTOCOL_VERSION });
+  // (Re)connect → say hello, presenting our token so the server resumes our robot.
+  conn.onOpen = () =>
+    conn.send({ t: MessageType.C_HELLO, protocolVersion: PROTOCOL_VERSION, sessionToken });
   conn.onMessage = onMessage;
+  conn.onStatus = updateNetUI;
   conn.connect();
+
+  // A napped phone or a dropped network is the common case (§4.7): nudge a
+  // reconnect the moment the tab is visible / online again, or on tap-to-retry.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') conn.ensureConnected();
+  });
+  window.addEventListener('online', () => conn.ensureConnected());
+  window.addEventListener('pageshow', () => conn.ensureConnected());
+  reconnectEl?.addEventListener('click', () => conn.ensureConnected());
 
   stage.app.ticker.add((ticker) => frame(ticker.deltaMS));
 }
@@ -69,10 +86,15 @@ function onMessage(msg: AnyMessage): void {
   switch (msg.t) {
     case MessageType.S_WELCOME:
       myRobotId = msg.yourRobotId;
+      sessionToken = msg.sessionToken;
+      saveToken(sessionToken);
       stage.setMyRobot(msg.yourRobotId);
       stage.setWorldSize(msg.worldBounds[2]);
-      camera.x = msg.worldBounds[2] / 2;
-      camera.y = msg.worldBounds[3] / 2;
+      // Only re-centre on a fresh spawn — a resume keeps the player's camera.
+      if (!msg.resumed) {
+        camera.x = msg.worldBounds[2] / 2;
+        camera.y = msg.worldBounds[3] / 2;
+      }
       break;
     case MessageType.S_SNAPSHOT_FULL:
       store.upsertFull(msg.entities, msg.serverTime);
@@ -94,7 +116,8 @@ function onMessage(msg: AnyMessage): void {
 }
 
 function onEvent(name: DomainEvent, _payload: unknown): void {
-  if (name === DomainEvent.ContractCompleted) showBanner();
+  if (name === DomainEvent.ContractCompleted) showBanner('Contract complete! 🎉', 6000);
+  else if (name === DomainEvent.ContractStarted) showBanner('New contract — build! 🏗️', 3500);
 }
 
 /**
@@ -130,14 +153,41 @@ function myCarrying(): boolean {
 }
 
 let bannerTimer = 0;
-function showBanner(): void {
+function showBanner(text: string, ms: number): void {
   if (!banner) return;
-  banner.textContent = 'Contract complete! 🎉';
+  banner.textContent = text;
   banner.style.display = 'block';
   window.clearTimeout(bannerTimer);
   bannerTimer = window.setTimeout(() => {
     banner.style.display = 'none';
-  }, 6000);
+  }, ms);
+}
+
+/** Show the "connection lost" overlay while we're not connected (§4.7). */
+function updateNetUI(status: ConnStatus): void {
+  if (!reconnectEl) return;
+  if (status === 'open') {
+    reconnectEl.style.display = 'none';
+  } else {
+    reconnectEl.textContent =
+      status === 'reconnecting' ? 'Connection lost — reconnecting… (tap to retry)' : 'Connecting…';
+    reconnectEl.style.display = 'block';
+  }
+}
+
+function loadToken(): string | undefined {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+function saveToken(token: string): void {
+  try {
+    sessionStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // private mode / storage disabled — token stays in memory for this tab
+  }
 }
 
 function frame(dtMs: number): void {
@@ -198,7 +248,7 @@ function updateHud(nowPerf: number): void {
     if (e.status === PieceStatus.Placed) placed += 1;
   }
   hud.set({
-    status: conn.connected ? 'connected' : 'connecting…',
+    status: conn.status,
     robot: myRobotId ?? '—',
     rtt_ms: Math.round(clock.rtt),
     interp_ms: interpDelayMs,

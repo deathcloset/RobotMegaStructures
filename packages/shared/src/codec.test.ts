@@ -14,6 +14,7 @@ import {
 const samples: AnyMessage[] = [
   { t: MessageType.C_HELLO, protocolVersion: 1, displayName: 'bot-7' },
   { t: MessageType.C_HELLO, protocolVersion: 1 },
+  { t: MessageType.C_HELLO, protocolVersion: 3, displayName: 'phone', sessionToken: 'sess_xyz' },
   { t: MessageType.C_INTENT_MOVE, tx: 123.5, ty: 0.0625 },
   { t: MessageType.C_INTENT_INTERACT, targetId: 1_000_003 },
   { t: MessageType.C_PING, clientTime: 1_700_000_000 },
@@ -26,6 +27,8 @@ const samples: AnyMessage[] = [
     chunkId: 0,
     worldBounds: [0, 0, 1024, 1024],
     serverTime: 999,
+    sessionToken: 'sess_abc',
+    resumed: false,
   },
   {
     t: MessageType.S_SNAPSHOT_FULL,

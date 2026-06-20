@@ -8,10 +8,12 @@ export enum DomainEvent {
   RobotEnteredChunk = 1,
   RobotLeftChunk = 2,
   RobotDisconnected = 3,
+  RobotReconnected = 4,
   // Build loop (Phase 1)
   ResourcePickedUp = 10,
   PiecePlaced = 11,
   ContractCompleted = 12,
+  ContractStarted = 13,
   // Reserved (slice 2 — two-robot weld, §10): PieceReserved,
   // PieceReservationExpired, PieceProgressed ...
 }
