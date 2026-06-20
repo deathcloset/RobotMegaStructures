@@ -1,4 +1,4 @@
-import { EntityKind, type EntitySnapshot, RobotStatusBit } from '@rms/shared';
+import { EntityKind, type EntitySnapshot, ROBOT_SPEED, RobotStatusBit } from '@rms/shared';
 import { advanceToward } from './movement';
 
 /** What a robot will do when it reaches its current target (§3 build loop). The
@@ -23,6 +23,14 @@ export class Robot {
   carrying = false;
   /** Queued build-loop action, resolved by the Chunk on arrival. */
   pendingAction: PendingAction | null = null;
+  /** An NPC that autonomously runs the build loop (vs. one that just wanders).
+   *  The seed of the future commandable AI crew / swarm. */
+  isBuilder = false;
+  /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
+   *  so AI bots are visibly less efficient than players. */
+  nextActionAt = 0;
+  /** Movement speed (world units/sec). Builders run a little slower than players. */
+  speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot
    *  whose owner has dropped and is in the §4.7 grace window ("parked"). */
   ownerConnectionId: number | null;
@@ -68,7 +76,7 @@ export class Robot {
   }
 
   step(dt: number): void {
-    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt);
+    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed);
     this.x = r.x;
     this.y = r.y;
     this.moving = !r.arrived;

@@ -16,6 +16,7 @@ function deltaConfig(): ServerConfig {
     lagMs: 0,
     jitterMs: 0,
     seedRobots: 0,
+    seedBuilders: 0,
     metricsLogMs: 5000,
     gracePeriodMs: 120_000,
   };

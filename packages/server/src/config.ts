@@ -17,6 +17,7 @@ export interface ServerConfig {
   lagMs: number;
   jitterMs: number;
   seedRobots: number;
+  seedBuilders: number;
   metricsLogMs: number;
   gracePeriodMs: number;
 }
@@ -49,6 +50,7 @@ export function loadConfig(): ServerConfig {
     lagMs: num('LAG_MS', 0),
     jitterMs: num('JITTER_MS', 0),
     seedRobots: num('SEED_ROBOTS', 8),
+    seedBuilders: num('SEED_BUILDERS', 5),
     metricsLogMs: num('METRICS_LOG_MS', 5000),
     gracePeriodMs: num('GRACE_PERIOD_MS', DEFAULT_GRACE_PERIOD_MS),
   };

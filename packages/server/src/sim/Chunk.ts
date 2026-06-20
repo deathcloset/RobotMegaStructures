@@ -108,19 +108,77 @@ export class Chunk {
     }
   }
 
-  /** Advance the simulation one tick. Controlled robots resolve queued build
-   *  actions; NPCs wander on arrival; parked (dropped-owner) robots hold still
-   *  until reclaimed or removed (§4.7). `now` drives the contract reset clock. */
+  /** Advance the simulation one tick. Controlled players and builder NPCs resolve
+   *  queued build actions; builder NPCs also pick their next action; plain NPCs
+   *  wander; parked (dropped-owner) robots hold still until reclaimed or removed
+   *  (§4.7). `now` drives the contract reset and builder dawdle clocks. */
   step(dt: number, now: number): void {
     for (const robot of this.robots.values()) {
       robot.step(dt);
-      if (robot.controlled) {
+      if (robot.isNpc) {
+        if (robot.isBuilder) this.driveBuilder(robot, now);
+        else if (!robot.moving)
+          robot.setTarget(Math.random() * this.size, Math.random() * this.size);
+      } else if (robot.controlled) {
         this.resolvePending(robot);
-      } else if (robot.isNpc && !robot.moving) {
-        robot.setTarget(Math.random() * this.size, Math.random() * this.size);
       }
     }
     this.advanceContract(now);
+  }
+
+  /** Autonomous build loop for an AI bot: haul from the nearest depot to the
+   *  nearest ghost, with a short dawdle between actions so it's visibly less
+   *  efficient than a player. The seed of the commandable crew/swarm. */
+  private driveBuilder(robot: Robot, now: number): void {
+    if (robot.pendingAction !== null) {
+      this.resolvePending(robot);
+      // Action done (placed/picked up, or target vanished) → pause before the next.
+      if (robot.pendingAction === null) robot.nextActionAt = now + 400 + Math.random() * 1400;
+      return;
+    }
+    if (now < robot.nextActionAt) return;
+    if (!robot.carrying) {
+      const depot = this.nearestResource(robot.x, robot.y);
+      if (depot) {
+        robot.setTarget(depot.x, depot.y);
+        robot.pendingAction = { kind: 'pickup', targetId: depot.id };
+      }
+    } else {
+      const ghost = this.nearestGhost(robot.x, robot.y);
+      if (ghost) {
+        robot.setTarget(ghost.x, ghost.y);
+        robot.pendingAction = { kind: 'deliver', targetId: ghost.id };
+      } else {
+        robot.nextActionAt = now + 1000; // nothing to build (resetting) — wait
+      }
+    }
+  }
+
+  private nearestResource(x: number, y: number): Resource | null {
+    let best: Resource | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const res of this.resources.values()) {
+      const d = Math.hypot(res.x - x, res.y - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = res;
+      }
+    }
+    return best;
+  }
+
+  private nearestGhost(x: number, y: number): Piece | null {
+    let best: Piece | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const piece of this.pieces.values()) {
+      if (piece.status !== PieceStatus.Ghost) continue;
+      const d = Math.hypot(piece.x - x, piece.y - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = piece;
+      }
+    }
+    return best;
   }
 
   /** Once a contract completes, hold the celebration briefly, then reset the

@@ -111,6 +111,27 @@ describe('build loop', () => {
   });
 });
 
+describe('NPC builder bots', () => {
+  it('autonomously hauls from a depot and places a ghost piece', () => {
+    const chunk = new Chunk();
+    const builder = new Robot(-1, 'npc_1', 100, 200, true);
+    builder.isBuilder = true;
+    chunk.addOccupant(builder);
+    chunk.addResource(new Resource(2_000_001, 'depot_1', 100, 100));
+    const piece = new Piece(1_000_001, 'piece_1', 300, 100);
+    chunk.addPiece(piece);
+
+    // Drive enough ticks for think → walk → pickup → walk → deliver (now advances
+    // so the builder's dawdle timer elapses between actions).
+    for (let i = 0; i < 300 && piece.status !== PieceStatus.Placed; i++) {
+      chunk.step(0.1, i * 100);
+    }
+
+    expect(piece.status).toBe(PieceStatus.Placed);
+    expect(builder.carrying).toBe(false);
+  });
+});
+
 describe('grace-period parking (§4.7)', () => {
   it('a parked robot holds position, keeps its load, and does not wander', () => {
     const { chunk, robot } = setup();

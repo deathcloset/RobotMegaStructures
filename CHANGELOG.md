@@ -21,9 +21,10 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 ## [Unreleased] — "First Bolt" 🔩 — Phase 1 in progress
 
 **Phase 1: the build loop (prove the fun).** The single-robot build loop end to
-end, plus connection resilience and a looping contract so it's pleasant to play
-on real phones. The version stays `0.1.0` until Phase 1 is complete (the
-two-robot weld is the last piece); the wire protocol bumps now.
+end, a living worksite of autonomous builder bots, connection resilience, and a
+looping contract — pleasant to play on real phones. The version stays `0.1.0`
+until Phase 1 is complete (the two-robot weld is the last piece); the wire
+protocol bumps now.
 
 ### Added
 - **Build pieces & resource depots** (`shared`): two new entity kinds (`Piece`,
@@ -40,6 +41,12 @@ two-robot weld is the last piece); the wire protocol bumps now.
 - **Looping contract**: a completed blueprint celebrates briefly, then resets to
   fresh ghosts (`ContractStarted`) so building never dead-ends — the cheap
   "another contract" retention bridge (§2.5).
+- **Builder bots / a living worksite**: a configurable share of seeded NPCs
+  (`SEED_BUILDERS`) now run the build loop autonomously — haul from the nearest
+  depot to the nearest ghost — a little slower than players and with a dawdle, so
+  AI bots work but "not as well as players." The blueprint grew to an 18-piece
+  block with four spread-out depots so a crowd (AI + human) has room. This is the
+  seed of the commandable crew/swarm and the AI weld-partner.
 - **Connection resilience (§4.7)** — reconnection is the common case on cheap
   phones, not an edge case:
   - each player robot gets a **session token** (in `S_WELCOME`); the client saves
@@ -67,15 +74,15 @@ two-robot weld is the last piece); the wire protocol bumps now.
   status bitfield; v3: session token in hello/welcome for reconnect resume).
 
 ### Proven
-- Unit (31 tests): pickup → carry → deliver → place, contract completion (and
-  that it can't fire twice), the contract loop reset, a move intent cancels a
-  queued action, an empty-handed deliver is a no-op, the delta status-change
-  ships, and a parked robot holds position + keeps its load.
-- Wire (built server, both snapshot modes): hello v3 → snapshot carries 6 pieces
-  + 2 depots → interacting a depot sets the carry bit → interacting a ghost emits
-  `PiecePlaced{placed:1,total:6}` and flips the piece to placed.
-- Wire reconnect: drop mid-carry → reconnect with the token → **same robot
-  resumed** (`resumed=true`), position and carried item intact.
+- Unit (37 tests): the build loop and completion (idempotent), the contract loop
+  reset, move-cancels-action, empty-handed-deliver no-op, the delta status-change,
+  a parked robot holding position + load, an **NPC builder autonomously placing a
+  piece**, and client **reconnect resilience** (connect-watchdog, zombie-socket
+  teardown, superseded-socket guard).
+- Wire (built server, both snapshot modes): full build loop at v3; reconnect
+  mid-carry resumes the **same robot** (`resumed=true`) with position + load
+  intact, across multiple cycles; and **8 builder bots complete and auto-loop a
+  full contract with no human input**.
 
 ### Next (completes Phase 1)
 - The **two-robot weld** (one holds, one welds) with a reservation **TTL** built
