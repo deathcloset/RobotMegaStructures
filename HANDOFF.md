@@ -12,6 +12,11 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
+- **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
+  Phase 2 **slice 1** — the world becomes a wide **side-scrolling planet whose X
+  axis wraps**, with a real surface/sky/atmosphere; the structure now stands on the
+  ground and rises. Protocol **v5**. See CHANGELOG "Unreleased". Remaining Phase 2
+  (mining, crews/swarms, the chunk grid) is below.
 
 ## Run / operate
 
@@ -28,8 +33,9 @@ now that Phase 1 is on `main`, switch it back to `main` (`git checkout main`) so
 
 ## Architecture in a nutshell
 
-- `packages/shared` — wire protocol + codec + fixed-point. **Change here = rebuild
-  all three.** Bump `PROTOCOL_VERSION` on any protocol change.
+- `packages/shared` — wire protocol + codec + fixed-point + **cylinder wrap math
+  (`world.ts`)**. **Change here = rebuild all three.** Bump `PROTOCOL_VERSION` on
+  any protocol change.
 - `packages/server` — `SimLoop` (tick), `Chunk` (actor-shaped, the one mutation
   entry is `applyIntent`), `Snapshotter` (full/delta), `WsGateway`, `Metrics`.
   In-memory; `state/repository.ts` is the seam for Valkey/Postgres.
@@ -66,9 +72,9 @@ in `Chunk` (`driveBuilder`, `advanceWelds`); piece weld state in `Piece`.
 ## Next up: **Phase 2** — the world gets big (Ben's steer, 2026-06-20)
 
 The fun is proven; now grow the world. Ben's direction (don't lose it):
-- **Side-scrolling landscape** extending far left/right that **wraps** (a circular
-  planet you can walk all the way around — Terraria/Starbound/Mario feel), the
-  megastructure rising up and up. Lay the **aesthetic** down early.
+- ✅ **Side-scrolling landscape that wraps** (slice 1, this branch) — a circular
+  planet you can walk all the way around, the megastructure rising from the
+  surface. Aesthetic laid down early (sky/atmosphere/ground/parallax).
 - **Surface-resource search + digging/mining** — a real way to source materials
   from the planet (depots become a starting convenience, not the whole story).
 - **Commandable AI crews / swarms** (builders are the seed) + a **delivery-swarm**
@@ -76,25 +82,32 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of
   finished structures, the megastructures game-set, optional robot personalities).
 
-**This is the chunk/AOI moment.** The world stops being one 1024² chunk; design
-doc §4.3 (chunk grid + interest management) and §4.4 (the OSHA cap = sharding
-boundary) finally earn their keep. Concrete first seams to lean on / extend:
+**What slice 1 settled (build on it, don't redo it):**
+- **The wrap math is decided once** in `shared/world.ts` (`wrapX`, `wrapDeltaX`,
+  `wrappedDistance`), server-authoritative and mirrored by the camera/renderer.
+  Anything spatial that subtracts two X values must go through `wrapDeltaX`.
+- **AOI is wrap-ready.** `broadcast/interest.ts` measures X the short way around
+  the cylinder, so multi-chunk is still just "iterate chunks overlapping the
+  viewport," and **egress per client stays flat as the world grows** (keep watching
+  `bytes_per_player_per_tick`). The world geometry rides `S_WELCOME` (v5).
+
+**Still the chunk/AOI moment (the remaining structural task).** The world is now a
+wide *single* wrapping chunk; it still needs to become *many* (design doc §4.3 grid
++ §4.4 the OSHA cap = sharding boundary):
 - `ChunkRegistry` is the one indirection between "one chunk" and "many" — grow it
   to a grid; keep `Chunk` an isolated message-in/state-out unit (the Elixir port
-  hedge, §5.4).
-- The viewport **AOI filter** (`broadcast/interest.ts`) already filters by the
-  client's reported viewport — multi-chunk becomes "iterate chunks overlapping the
-  viewport," and **egress per client stays flat as the world grows** (the whole
-  §7 bandwidth case — keep watching `bytes_per_player_per_tick`).
-- World coords are fixed-point on the wire; a wrapping X axis means deciding the
-  wrap math once (server-authoritative) and the camera's wrap rendering.
-- Mining wants a new `EntityKind` (ore/deposit) + an intent, slotting into the
-  same `applyIntent` chokepoint and entity-neutral snapshot path.
+  hedge, §5.4). Note `SimLoop`/`Snapshotter` currently read `chunks.primary`; the
+  grid generalizes that to "the chunks overlapping each client's viewport."
+- Mining wants a new `EntityKind` (ore/deposit) + an intent, slotting into the same
+  `applyIntent` chokepoint and entity-neutral snapshot path.
 
-**Watch out:** Phase 0/1 assume a single `WORLD_SIZE` square and `CHUNK_ID = 0`
-(see `shared/constants.ts`, `ChunkRegistry`). Generalizing those is the first real
-task. Two-rate loop, codec, interpolation, resilience, and the build/weld
-mechanics all carry over unchanged.
+**Watch out:** the world is no longer square — it's `WORLD_WIDTH × WORLD_HEIGHT`
+with `GROUND_Y` and a wrapping X (see `shared/constants.ts`). `CHUNK_ID = 0` is
+still the single chunk. Two-rate loop, codec, interpolation, resilience, and the
+build/weld mechanics all carry over unchanged. When you add vertical zoom-out for a
+tall structure, remember the zoom-out floor is currently capped at one lap (camera
+`minScale`) — a taller world that wraps will want render-side tiling, not a looser
+cap.
 
 ## Gotchas we learned (don't re-discover these)
 
@@ -108,3 +121,7 @@ mechanics all carry over unchanged.
   delta path silently drops a `status` flip on a static entity (e.g. a piece
   going ghost → placed). The Snapshotter restates an entity whose `status`
   changed in `added`; remember this when adding any future per-entity state.
+- **Seam interpolation.** The client unwraps wrapped server X into a *continuous*
+  coordinate before interpolating (`EntityStore`); otherwise a robot crossing the
+  seam (x≈width → x≈0) lerps backwards across the whole world. The renderer then
+  wraps that continuous X to the copy nearest the camera (`Stage.wrapNear`).

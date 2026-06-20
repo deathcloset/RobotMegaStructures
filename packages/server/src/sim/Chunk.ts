@@ -4,12 +4,16 @@ import {
   DEFAULT_CONTRACT_RESET_MS,
   DomainEvent,
   type EntitySnapshot,
+  GROUND_Y,
   INTERACT_RANGE,
   MessageType,
   PieceStatus,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
-  WORLD_SIZE,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
+  wrappedDistance,
+  wrapX,
 } from '@rms/shared';
 import type { Piece } from './Piece';
 import type { Resource } from './Resource';
@@ -29,7 +33,11 @@ export interface ChunkEvent {
  */
 export class Chunk {
   readonly id = CHUNK_ID;
-  readonly size = WORLD_SIZE;
+  /** Cylinder dimensions: width wraps (the seam), height is bounded, groundY is
+   *  the surface. Movement/distance/AOI all measure X the short way around. */
+  readonly width = WORLD_WIDTH;
+  readonly height = WORLD_HEIGHT;
+  readonly groundY = GROUND_Y;
   private readonly robots = new Map<number, Robot>();
   private readonly pieces = new Map<number, Piece>();
   private readonly resources = new Map<number, Resource>();
@@ -90,7 +98,8 @@ export class Chunk {
       // of any weld it was holding/welding.
       robot.engagedPieceId = null;
       robot.pendingAction = null;
-      robot.setTarget(clamp(msg.tx, 0, this.size), clamp(msg.ty, 0, this.size));
+      // X wraps around the planet; Y is clamped to the surface (sky..ground).
+      robot.setTarget(wrapX(msg.tx, this.width), clamp(msg.ty, 0, this.groundY));
     } else if (msg.t === MessageType.C_INTENT_INTERACT) {
       robot.engagedPieceId = null; // a new command releases any current weld hold
       this.applyInteract(robot, msg.targetId);
@@ -138,11 +147,10 @@ export class Chunk {
         robot.halt(); // holding/welding — the weld logic frees it
         continue;
       }
-      robot.step(dt);
+      robot.step(dt, this.width);
       if (robot.isNpc) {
         if (robot.isBuilder) this.driveBuilder(robot, now);
-        else if (!robot.moving)
-          robot.setTarget(Math.random() * this.size, Math.random() * this.size);
+        else if (!robot.moving) robot.setTarget(Math.random() * this.width, this.wanderY());
       } else if (robot.controlled) {
         this.resolvePending(robot, now);
       }
@@ -200,7 +208,7 @@ export class Chunk {
         robot.pendingAction = null;
         return;
       }
-      if (!within(robot, res)) return;
+      if (!within(robot, res, this.width)) return;
       if (!robot.carrying) {
         robot.carrying = true;
         this.events.push({
@@ -214,7 +222,7 @@ export class Chunk {
         robot.pendingAction = null;
         return;
       }
-      if (!within(robot, piece)) return;
+      if (!within(robot, piece, this.width)) return;
       if (robot.carrying && piece.status === PieceStatus.Ghost) {
         if (piece.weld) {
           // Hold the beam in place; await a welder (§10). Keep carrying.
@@ -234,7 +242,7 @@ export class Chunk {
         robot.pendingAction = null;
         return;
       }
-      if (!within(robot, piece)) return;
+      if (!within(robot, piece, this.width)) return;
       if (
         piece.weld &&
         piece.status === PieceStatus.Reserved &&
@@ -353,11 +361,17 @@ export class Chunk {
     }
   }
 
+  /** A random Y in the band just above the surface — ambient wanderers mill along
+   *  the ground rather than floating up into the empty sky. */
+  private wanderY(): number {
+    return this.groundY - Math.random() * 220;
+  }
+
   private nearestResource(x: number, y: number): Resource | null {
     let best: Resource | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const res of this.resources.values()) {
-      const d = Math.hypot(res.x - x, res.y - y);
+      const d = wrappedDistance(x, y, res.x, res.y, this.width);
       if (d < bestDist) {
         bestDist = d;
         best = res;
@@ -371,7 +385,7 @@ export class Chunk {
     let bestDist = Number.POSITIVE_INFINITY;
     for (const piece of this.pieces.values()) {
       if (piece.status !== PieceStatus.Ghost) continue;
-      const d = Math.hypot(piece.x - x, piece.y - y);
+      const d = wrappedDistance(x, y, piece.x, piece.y, this.width);
       if (d < bestDist) {
         bestDist = d;
         best = piece;
@@ -388,7 +402,7 @@ export class Chunk {
     for (const piece of this.pieces.values()) {
       if (!piece.weld || piece.status !== PieceStatus.Reserved) continue;
       if (piece.welderId !== null || piece.holderId === excludeRobotId) continue;
-      const d = Math.hypot(piece.x - x, piece.y - y);
+      const d = wrappedDistance(x, y, piece.x, piece.y, this.width);
       if (d < bestDist) {
         bestDist = d;
         best = piece;
@@ -413,8 +427,8 @@ export class Chunk {
   }
 }
 
-function within(robot: Robot, e: { x: number; y: number }): boolean {
-  return Math.hypot(robot.x - e.x, robot.y - e.y) <= INTERACT_RANGE;
+function within(robot: Robot, e: { x: number; y: number }, width: number): boolean {
+  return wrappedDistance(robot.x, robot.y, e.x, e.y, width) <= INTERACT_RANGE;
 }
 
 function clamp(v: number, lo: number, hi: number): number {

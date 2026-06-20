@@ -61,6 +61,7 @@ httpServer.listen(config.port, config.host, () => {
     seedRobots: config.seedRobots,
     seedBuilders: config.seedBuilders,
     contractPieces: chunks.primary.pieceCount,
+    world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,
   });
   loop.start();
@@ -72,18 +73,21 @@ httpServer.listen(config.port, config.host, () => {
 function seedRobots(): void {
   const chunk = chunks.primary;
   for (let i = 0; i < config.seedRobots; i++) {
+    // Spread NPCs across the planet, near the surface, so walking around the
+    // world you keep coming across robots at work.
+    const y = chunk.groundY - 20 - Math.random() * 200;
     const robot = new Robot(
       -(i + 1),
       repo.nextStableId('npc'),
-      Math.random() * chunk.size,
-      Math.random() * chunk.size,
+      Math.random() * chunk.width,
+      y,
       true,
     );
     if (i < config.seedBuilders) {
       robot.isBuilder = true;
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
     } else {
-      robot.setTarget(Math.random() * chunk.size, Math.random() * chunk.size);
+      robot.setTarget(Math.random() * chunk.width, chunk.groundY - Math.random() * 200);
     }
     chunk.addOccupant(robot);
   }

@@ -7,6 +7,7 @@ import {
   PieceStatus,
   PROTOCOL_VERSION,
   RobotStatusBit,
+  wrapDeltaX,
 } from '@rms/shared';
 import { Hud } from './hud/Hud';
 import { Input } from './input/Input';
@@ -38,6 +39,7 @@ const reconnectEl = document.getElementById('reconnect');
 
 let camera: Camera;
 let myRobotId: number | null = null;
+let worldWidth = 0; // circumference (from welcome); enables wrap-aware tapping
 let sessionToken: string | undefined = loadToken();
 let lastViewportSent = 0;
 let lastPingAt = 0;
@@ -84,18 +86,23 @@ async function main(): Promise<void> {
 
 function onMessage(msg: AnyMessage): void {
   switch (msg.t) {
-    case MessageType.S_WELCOME:
+    case MessageType.S_WELCOME: {
       myRobotId = msg.yourRobotId;
       sessionToken = msg.sessionToken;
       saveToken(sessionToken);
+      const [x0, , x1] = msg.worldBounds;
+      worldWidth = x1 - x0;
       stage.setMyRobot(msg.yourRobotId);
-      stage.setWorldSize(msg.worldBounds[2]);
-      // Only re-centre on a fresh spawn — a resume keeps the player's camera.
+      stage.setWorld(worldWidth, msg.groundY);
+      camera.setWorldWidth(worldWidth);
+      store.setWorldWidth(worldWidth);
+      // Only re-frame on a fresh spawn — a resume keeps the player's camera.
       if (!msg.resumed) {
-        camera.x = msg.worldBounds[2] / 2;
-        camera.y = msg.worldBounds[3] / 2;
+        camera.x = (x0 + x1) / 2; // the structure rises from the middle of the planet
+        camera.y = msg.groundY - 200; // surface low in frame, sky above
       }
       break;
+    }
     case MessageType.S_SNAPSHOT_FULL:
       store.upsertFull(msg.entities, msg.serverTime);
       newestServerTime = Math.max(newestServerTime, msg.serverTime);
@@ -135,7 +142,10 @@ function onTap(x: number, y: number): void {
   let bestDist = TAP_PICK_RANGE;
   for (const e of rendered) {
     if (!actionable(e, carrying)) continue;
-    const d = Math.hypot(e.x - x, e.y - y);
+    // Measure X the short way around the cylinder so a tap near the seam still
+    // grabs the entity on the other side of the wrap.
+    const dx = worldWidth > 0 ? wrapDeltaX(e.x, x, worldWidth) : e.x - x;
+    const d = Math.hypot(dx, e.y - y);
     if (d <= bestDist) {
       best = e;
       bestDist = d;

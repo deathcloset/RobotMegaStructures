@@ -18,6 +18,67 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ---
 
+## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
+
+**Slice 1: the wrapping world & surface aesthetic.** The single 1024² square
+becomes a wide **side-scrolling planet whose X axis wraps** — walk far enough
+left or right and you arrive back where you started — with a real **surface, sky,
+and atmosphere**, the megastructure now standing on the ground and rising toward
+the sky. This lays the aesthetic down early and makes the netcode wrap-ready for
+the rest of Phase 2 (Ben's steer, 2026-06-20). Still one wide chunk: the chunk
+**grid + OSHA handoff**, **surface mining**, and **commandable crews/swarms** are
+the next slices.
+
+### Added
+- **Cylinder geometry** (`shared/world.ts`): `wrapX`, `wrapDeltaX` (shortest signed
+  step across the seam), and `wrappedDistance` — the wrap math decided **once** and
+  shared byte-for-byte by the server (authoritative) and the client (camera +
+  render), the same discipline as the shared codec. Unit-tested incl. seam cases.
+- **Surface & sky aesthetic** (`client`): a screen-space backdrop — deep-space
+  background, a world-anchored **atmosphere haze** the structure rises into, a
+  rim-lit **horizon line**, ground **motion ticks** that scroll as you walk, and a
+  gentle **star parallax**. Drawn behind the camera-transformed world so it stays
+  seamless everywhere on the planet.
+- **Seamless wrap rendering** (`client`): every entity is drawn at the copy of its
+  X nearest the camera, and the camera loops around the planet; zoom-out is capped
+  at exactly one lap so the cylinder never visibly tiles. The interpolation buffer
+  unwraps seam crossings (continuous X), so a robot stepping across the seam glides
+  the short way instead of zipping back around the world.
+
+### Changed
+- **World model** (`shared/constants.ts`): `WORLD_SIZE` (square) → `WORLD_WIDTH`
+  (wraps) + `WORLD_HEIGHT` + `GROUND_Y` + `WORLD_WRAP_X`. Movement, interaction
+  range, nearest-entity search, and the **viewport AOI filter** all now measure X
+  the short way around the cylinder — an entity just across the seam from your view
+  stays visible instead of popping. Egress per client is unchanged.
+- **Blueprint & spawns** (`server`): the contract stands on the surface and rises
+  toward the sky; depots spread along the ground to either side; players spawn on
+  the surface by the structure and NPCs scatter along the planet so walking around
+  it you keep meeting robots at work. Robots are clamped to the surface (Y), free
+  around it (X).
+
+### Protocol
+- `PROTOCOL_VERSION` → **5**: `S_WELCOME` now carries rectangular `worldBounds`
+  plus `groundY` and `wrapX`, so the client adopts the world geometry from the
+  server instead of assuming a square.
+
+### Proven
+- Unit (53 tests, +11): the wrap math (incl. shortest-path across the seam),
+  wrap-aware movement (short way + result wrapped into range), and seam-crossing
+  interpolation continuity. The Phase 1 build/weld/resilience suite is unchanged
+  and still green.
+- Wire (built server): boots `4096x1024 wrapX groundY=896`; a v5 client receives
+  the new welcome fields; **8 builder bots placed 11/18 pieces in ~9 s** in the new
+  surface layout (the build loop + two-robot weld carry over unchanged).
+
+### Next (still in Phase 2)
+- Surface-resource search + **mining/digging** (a new entity kind + intent through
+  the same `applyIntent` chokepoint), **commandable AI crews/swarms** + a
+  delivery-swarm robot type, and the **chunk grid + OSHA handoff** (grow
+  `ChunkRegistry` from one wide chunk to many; AOI is already wrap-ready).
+
+---
+
 ## v0.2.0 — "First Bolt" 🔩 — 2026-06-20
 
 **Phase 1: the build loop (prove the fun).** Wandering dots became a game: a real

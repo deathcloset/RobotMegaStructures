@@ -65,6 +65,8 @@ function toWire(msg: AnyMessage): unknown[] {
         msg.serverTime,
         msg.sessionToken,
         msg.resumed,
+        toFixed16(msg.groundY),
+        msg.wrapX,
       ];
     case MessageType.S_SNAPSHOT_FULL:
       return [msg.t, msg.tick, msg.serverTime, msg.entities.map(entityToWire)];
@@ -125,6 +127,8 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
         serverTime: a[6],
         sessionToken: a[7],
         resumed: a[8],
+        groundY: fromFixed16(a[9]),
+        wrapX: a[10],
       };
     case MessageType.S_SNAPSHOT_FULL:
       return {

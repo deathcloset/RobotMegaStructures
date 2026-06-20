@@ -6,6 +6,8 @@ joinable from a link on the cheapest phone. See the full vision in
 
 **Status: v0.2.0 "First Bolt" 🔩** (Phase 1 complete) — see [`CHANGELOG.md`](./CHANGELOG.md)
 for what shipped and [`HANDOFF.md`](./HANDOFF.md) to pick up development.
+**Phase 2 is underway** on a branch 🪐: the world is becoming a wide side-scrolling
+planet whose horizon wraps, with a real surface and sky (see CHANGELOG "Unreleased").
 
 **What works today (Phase 1):** a real build loop on a live authoritative server —
 robots haul material from depots to a ghost blueprint and place it; a top row of

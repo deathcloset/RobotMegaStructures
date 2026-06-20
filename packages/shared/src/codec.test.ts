@@ -25,10 +25,12 @@ const samples: AnyMessage[] = [
     tickHz: 10,
     broadcastHz: 4,
     chunkId: 0,
-    worldBounds: [0, 0, 1024, 1024],
+    worldBounds: [0, 0, 4096, 1024],
     serverTime: 999,
     sessionToken: 'sess_abc',
     resumed: false,
+    groundY: 896,
+    wrapX: true,
   },
   {
     t: MessageType.S_SNAPSHOT_FULL,

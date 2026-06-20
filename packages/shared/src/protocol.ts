@@ -66,7 +66,13 @@ export interface SWelcome {
   tickHz: number;
   broadcastHz: number;
   chunkId: number;
+  /** [x0, y0, x1, y1] — now a wide rectangle, not a square (§ Phase 2). */
   worldBounds: WorldBounds;
+  /** Surface line (world Y): sky above, ground below; the structure rises from it. */
+  groundY: number;
+  /** The X axis wraps (cylinder): the client renders the seam seamlessly and the
+   *  camera loops. */
+  wrapX: boolean;
   serverTime: number;
   /** Token to present on a later reconnect to resume this robot (§4.7). Also
    *  signals whether this welcome was a fresh spawn or a resume (see `resumed`). */

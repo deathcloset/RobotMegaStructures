@@ -1,10 +1,12 @@
-import type { EntityDelta, EntitySnapshot } from '@rms/shared';
+import { type EntityDelta, type EntitySnapshot, wrapDeltaX } from '@rms/shared';
 import { interpolateBuffer, type Sample } from './interpolate';
 
 export interface RenderEntity {
   id: number;
   kind: number;
   status: number;
+  /** Continuous X (may run outside [0, width) — the renderer wraps it to the
+   *  copy nearest the camera). See `addSample`. */
   x: number;
   y: number;
 }
@@ -14,7 +16,17 @@ export interface RenderEntity {
 export class EntityStore {
   private readonly buffers = new Map<number, Sample[]>();
   private readonly meta = new Map<number, { kind: number; status: number }>();
+  /** Last raw (wrapped) X received per entity — used to unwrap into a continuous
+   *  coordinate so seam crossings interpolate the short way, not all the way back
+   *  around the planet. */
+  private readonly lastRawX = new Map<number, number>();
+  private worldWidth = 0;
   private static readonly KEEP_MS = 1500;
+
+  /** Learn the planet circumference (from the welcome); enables seam unwrapping. */
+  setWorldWidth(width: number): void {
+    this.worldWidth = width;
+  }
 
   /** A full snapshot is authoritative about presence. */
   upsertFull(entities: EntitySnapshot[], serverTime: number): void {
@@ -43,12 +55,22 @@ export class EntityStore {
     for (const id of removed) this.remove(id);
   }
 
-  private addSample(id: number, serverTime: number, x: number, y: number): void {
+  private addSample(id: number, serverTime: number, rawX: number, y: number): void {
     let buf = this.buffers.get(id);
     if (!buf) {
       buf = [];
       this.buffers.set(id, buf);
     }
+    // Unwrap the wrapped server X into a continuous coordinate: advance the
+    // previous continuous X by the SHORT step across the seam. Without this, a
+    // robot stepping 4090 → 5 would lerp backwards across the whole world.
+    let x = rawX;
+    const prevRaw = this.lastRawX.get(id);
+    const last = buf[buf.length - 1];
+    if (this.worldWidth > 0 && prevRaw !== undefined && last !== undefined) {
+      x = last.x + wrapDeltaX(prevRaw, rawX, this.worldWidth);
+    }
+    this.lastRawX.set(id, rawX);
     buf.push({ serverTime, x, y });
     const cutoff = serverTime - EntityStore.KEEP_MS;
     while (buf.length > 2 && buf[0]!.serverTime < cutoff) buf.shift();
@@ -57,6 +79,7 @@ export class EntityStore {
   private remove(id: number): void {
     this.buffers.delete(id);
     this.meta.delete(id);
+    this.lastRawX.delete(id);
   }
 
   get size(): number {

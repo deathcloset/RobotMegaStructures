@@ -7,6 +7,7 @@ import {
   MessageType,
   PROTOCOL_VERSION,
   type ServerMessage,
+  WORLD_WRAP_X,
 } from '@rms/shared';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { ServerConfig } from '../config';
@@ -118,10 +119,10 @@ export class WsGateway {
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
     const chunk = this.chunks.primary;
-    // Spawn below the blueprint, between it and the depots, so new players land
-    // looking at the work site.
-    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 60;
-    const spawnY = chunk.size * 0.55 + (Math.random() * 2 - 1) * 30;
+    // Spawn on the surface by the blueprint so new players land looking at the
+    // work site, with the structure rising in front of them.
+    const spawnX = chunk.width / 2 + (Math.random() * 2 - 1) * 80;
+    const spawnY = chunk.groundY - 24 - Math.random() * 40;
     const robot = new Robot(
       robotId,
       this.repo.nextStableId('robot'),
@@ -182,7 +183,9 @@ export class WsGateway {
         tickHz: this.config.tickHz,
         broadcastHz: this.config.broadcastHz,
         chunkId: chunk.id,
-        worldBounds: [0, 0, chunk.size, chunk.size],
+        worldBounds: [0, 0, chunk.width, chunk.height],
+        groundY: chunk.groundY,
+        wrapX: WORLD_WRAP_X,
         serverTime: now,
         sessionToken: token,
         resumed,

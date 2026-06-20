@@ -5,8 +5,10 @@ export const APP_CODENAME = 'First Bolt';
 /** Bumped on any wire-protocol change; C_HELLO is rejected on mismatch.
  *  v2 (Phase 1): adds the interact intent + piece/resource entity kinds.
  *  v3 (Phase 1): adds the session token for reconnect/resume (§4.7).
- *  v4 (Phase 1): adds the two-robot weld piece kind + reservation events. */
-export const PROTOCOL_VERSION = 4;
+ *  v4 (Phase 1): adds the two-robot weld piece kind + reservation events.
+ *  v5 (Phase 2): wide wrapping world — S_WELCOME carries groundY + wrapX and
+ *               rectangular worldBounds (the world is a cylinder, see below). */
+export const PROTOCOL_VERSION = 5;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;
@@ -16,9 +18,27 @@ export const DEFAULT_TICK_HZ = 10;
 /** Snapshot broadcast rate to clients (Hz) — §7.1/§7.4. */
 export const DEFAULT_BROADCAST_HZ = 4;
 
-/** One flat square chunk, world units on a side (Phase 0 has exactly one). */
-export const WORLD_SIZE = 1024;
-/** The single Phase 0 chunk id. */
+/**
+ * The world is a CYLINDER (Phase 2): a wide side-scrolling planet whose X axis
+ * WRAPS — walk far enough left or right and you arrive back where you started —
+ * with a bounded vertical axis (sky above, surface below) up which the
+ * megastructure rises. Phase 0/1 were a single 1024² square; the wrap math is
+ * decided once and server-authoritatively in `world.ts`, then mirrored by the
+ * camera/renderer so the seam is invisible.
+ */
+/** Planet circumference in world units — the X axis wraps over [0, WORLD_WIDTH). */
+export const WORLD_WIDTH = 4096;
+/** Vertical extent in world units (y=0 is the top of the sky). Does not wrap. */
+export const WORLD_HEIGHT = 1024;
+/** The surface line (world Y). Robots live on/above it (clamped to [0, GROUND_Y])
+ *  and the structure rises from here toward y=0; the band below is reserved for a
+ *  later surface-mining/digging slice. */
+export const GROUND_Y = 896;
+/** The world's X axis wraps (it's a cylinder). Sent in S_WELCOME so the client
+ *  renders the seam seamlessly and the camera loops all the way around. */
+export const WORLD_WRAP_X = true;
+/** The single chunk id. Phase 2 still runs one wide wrapping chunk; growing the
+ *  ChunkRegistry to a GRID + the OSHA handoff is the next structural slice. */
 export const CHUNK_ID = 0;
 
 /** Robot movement speed, world units per second. */

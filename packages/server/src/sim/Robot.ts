@@ -79,8 +79,10 @@ export class Robot {
     this.moving = false;
   }
 
-  step(dt: number): void {
-    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed);
+  /** `wrapWidth` (the world circumference) makes movement honour the cylinder
+   *  seam; 0 keeps the flat-plane behaviour (used by the movement unit tests). */
+  step(dt: number, wrapWidth = 0): void {
+    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed, wrapWidth);
     this.x = r.x;
     this.y = r.y;
     this.moving = !r.arrived;
