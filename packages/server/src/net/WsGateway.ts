@@ -151,15 +151,16 @@ export class WsGateway {
       return false;
     }
     this.cancelGrace(robotId);
-    // If a stale connection still holds this robot, retire it (its onClose will
-    // no-op since ownership has already moved on).
+    // Claim ownership FIRST, then retire any stale connection still holding this
+    // robot — so that connection's (late, async) onClose sees the new owner and
+    // no-ops instead of re-parking a robot we've just reclaimed.
     const prevConnId = robot.ownerConnectionId;
-    if (prevConnId !== null && prevConnId !== conn.id) {
-      this.connections.get(prevConnId)?.close();
-    }
     robot.ownerConnectionId = conn.id;
     conn.robotId = robotId;
     conn.helloOk = true;
+    if (prevConnId !== null && prevConnId !== conn.id) {
+      this.connections.get(prevConnId)?.close();
+    }
     this.sendWelcome(conn, robotId, token, true, now);
     this.broadcastEvent(DomainEvent.RobotReconnected, { robotId });
     log.info('client resumed', { conn: conn.id, robotId, conns: this.connections.size });

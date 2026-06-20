@@ -116,8 +116,11 @@ function onMessage(msg: AnyMessage): void {
 }
 
 function onEvent(name: DomainEvent, _payload: unknown): void {
-  if (name === DomainEvent.ContractCompleted) showBanner('Contract complete! 🎉', 6000);
-  else if (name === DomainEvent.ContractStarted) showBanner('New contract — build! 🏗️', 3500);
+  if (name === DomainEvent.ContractCompleted) {
+    showBanner('Contract complete! 🎉  Next blueprint incoming…', 6000);
+  } else if (name === DomainEvent.ContractStarted) {
+    showBanner('New contract — build! 🏗️', 4000);
+  }
 }
 
 /**
