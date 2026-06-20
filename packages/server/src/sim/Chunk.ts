@@ -7,6 +7,7 @@ import {
   GROUND_Y,
   INTERACT_RANGE,
   MessageType,
+  MINE_DURATION_MS,
   PieceStatus,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
@@ -15,6 +16,7 @@ import {
   wrappedDistance,
   wrapX,
 } from '@rms/shared';
+import type { Deposit } from './Deposit';
 import type { Piece } from './Piece';
 import type { Resource } from './Resource';
 import type { Robot } from './Robot';
@@ -41,6 +43,7 @@ export class Chunk {
   private readonly robots = new Map<number, Robot>();
   private readonly pieces = new Map<number, Piece>();
   private readonly resources = new Map<number, Resource>();
+  private readonly deposits = new Map<number, Deposit>();
   private readonly events: ChunkEvent[] = [];
   private placed = 0;
   private completed = false;
@@ -70,6 +73,11 @@ export class Chunk {
     this.resources.set(resource.id, resource);
   }
 
+  /** Seed an ore deposit (surface mining, § Phase 2). */
+  addDeposit(deposit: Deposit): void {
+    this.deposits.set(deposit.id, deposit);
+  }
+
   getRobot(robotId: number): Robot | undefined {
     return this.robots.get(robotId);
   }
@@ -95,13 +103,15 @@ export class Chunk {
     if (!robot) return;
     if (msg.t === MessageType.C_INTENT_MOVE) {
       // A manual move redirects the robot, cancels any queued action, and lets go
-      // of any weld it was holding/welding.
+      // of any weld it was holding/welding or vein it was digging.
       robot.engagedPieceId = null;
+      robot.mineUntil = null;
       robot.pendingAction = null;
       // X wraps around the planet; Y is clamped to the surface (sky..ground).
       robot.setTarget(wrapX(msg.tx, this.width), clamp(msg.ty, 0, this.groundY));
     } else if (msg.t === MessageType.C_INTENT_INTERACT) {
       robot.engagedPieceId = null; // a new command releases any current weld hold
+      robot.mineUntil = null; // ...or abandons a dig in progress
       this.applyInteract(robot, msg.targetId);
     }
   }
@@ -115,6 +125,12 @@ export class Chunk {
       if (res) {
         robot.setTarget(res.x, res.y);
         robot.pendingAction = { kind: 'pickup', targetId };
+        return;
+      }
+      const dep = this.deposits.get(targetId);
+      if (dep && dep.amount >= 1) {
+        robot.setTarget(dep.x, dep.y);
+        robot.pendingAction = { kind: 'mine', targetId };
         return;
       }
       const weld = this.pieces.get(targetId);
@@ -156,6 +172,7 @@ export class Chunk {
       }
     }
     this.advanceWelds(now);
+    for (const dep of this.deposits.values()) dep.regen(dt); // veins slowly refill
     this.advanceContract(now);
   }
 
@@ -235,8 +252,8 @@ export class Chunk {
           this.placePiece(piece, robot);
         }
       }
-    } else {
-      // 'weld': join someone's held piece as the welder.
+    } else if (action.kind === 'weld') {
+      // join someone's held piece as the welder.
       const piece = this.pieces.get(action.targetId);
       if (!piece) {
         robot.pendingAction = null;
@@ -253,6 +270,29 @@ export class Chunk {
         piece.status = PieceStatus.InProgress;
         piece.weldDoneAt = now + WELD_DURATION_MS;
         robot.engagedPieceId = piece.id;
+      }
+    } else {
+      // 'mine': dig an ore vein for a while, then carry off a load (§ Phase 2).
+      const dep = this.deposits.get(action.targetId);
+      if (!dep) {
+        robot.mineUntil = null;
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, dep, this.width)) return; // still walking to the vein
+      if (robot.mineUntil === null) {
+        robot.mineUntil = now + MINE_DURATION_MS; // arrived → start digging
+        robot.halt();
+        return;
+      }
+      if (now < robot.mineUntil) return; // still digging — hold at the vein
+      robot.mineUntil = null;
+      if (!robot.carrying && dep.extract()) {
+        robot.carrying = true;
+        this.events.push({
+          name: DomainEvent.ResourcePickedUp,
+          payload: { robotId: robot.id, depositId: dep.id },
+        });
       }
     }
     robot.halt();
@@ -417,6 +457,7 @@ export class Chunk {
     for (const robot of this.robots.values()) out.push(robot.toSnapshot());
     for (const piece of this.pieces.values()) out.push(piece.toSnapshot());
     for (const resource of this.resources.values()) out.push(resource.toSnapshot());
+    for (const deposit of this.deposits.values()) out.push(deposit.toSnapshot());
     return out;
   }
 

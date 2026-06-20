@@ -161,6 +161,7 @@ function onTap(x: number, y: number): void {
 /** Can this robot act on entity `e` right now, given whether it's carrying? */
 function actionable(e: RenderEntity, carrying: boolean): boolean {
   if (e.kind === EntityKind.Resource) return !carrying; // grab from a depot
+  if (e.kind === EntityKind.Deposit) return !carrying && e.status > 0; // mine an ore vein
   if (e.kind === EntityKind.Piece) return carrying && e.status === PieceStatus.Ghost; // deliver
   if (e.kind === EntityKind.WeldPiece) {
     if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)

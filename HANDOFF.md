@@ -13,10 +13,11 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
 - **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
-  Phase 2 **slice 1** — the world becomes a wide **side-scrolling planet whose X
-  axis wraps**, with a real surface/sky/atmosphere; the structure now stands on the
-  ground and rises. Protocol **v5**. See CHANGELOG "Unreleased". Remaining Phase 2
-  (mining, crews/swarms, the chunk grid) is below.
+  Phase 2 so far — **slice 1**: the world becomes a wide **side-scrolling planet
+  whose X axis wraps**, with a real surface/sky/atmosphere, the structure standing
+  on the ground and rising; **slice 2**: **surface mining** — ore veins scattered
+  around the planet you dig for material. Protocol **v6**. See CHANGELOG
+  "Unreleased". Remaining Phase 2 (crews/swarms, the chunk grid) is below.
 
 ## Run / operate
 
@@ -75,8 +76,10 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
 - ✅ **Side-scrolling landscape that wraps** (slice 1, this branch) — a circular
   planet you can walk all the way around, the megastructure rising from the
   surface. Aesthetic laid down early (sky/atmosphere/ground/parallax).
-- **Surface-resource search + digging/mining** — a real way to source materials
-  from the planet (depots become a starting convenience, not the whole story).
+- ✅ **Surface-resource search + digging/mining** (slice 2, this branch) — renewable
+  ore veins scattered around the planet; an empty-handed robot digs one for a load
+  that feeds the build loop. Depots are now the convenient starter, veins the wider
+  story. (Next: let builder bots mine too; eventually below-surface digging.)
 - **Commandable AI crews / swarms** (builders are the seed) + a **delivery-swarm**
   robot type — set-and-forget far journeys that still need coordination.
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of
@@ -98,8 +101,10 @@ wide *single* wrapping chunk; it still needs to become *many* (design doc §4.3 
   to a grid; keep `Chunk` an isolated message-in/state-out unit (the Elixir port
   hedge, §5.4). Note `SimLoop`/`Snapshotter` currently read `chunks.primary`; the
   grid generalizes that to "the chunks overlapping each client's viewport."
-- Mining wants a new `EntityKind` (ore/deposit) + an intent, slotting into the same
-  `applyIntent` chokepoint and entity-neutral snapshot path.
+- Mining (slice 2) is the worked example of adding an `EntityKind` (`Deposit`) +
+  a context-resolved action through the one `applyIntent` chokepoint and the
+  entity-neutral snapshot path — copy that shape for future kinds (colonists,
+  aliens, …).
 
 **Watch out:** the world is no longer square — it's `WORLD_WIDTH × WORLD_HEIGHT`
 with `GROUND_Y` and a wrapping X (see `shared/constants.ts`). `CHUNK_ID = 0` is

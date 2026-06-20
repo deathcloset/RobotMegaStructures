@@ -1,5 +1,6 @@
 import {
   DEFAULT_CONTRACT_RESET_MS,
+  DEPOSIT_MAX,
   DomainEvent,
   MessageType,
   PieceStatus,
@@ -8,6 +9,7 @@ import {
 } from '@rms/shared';
 import { describe, expect, it } from 'vitest';
 import { Chunk } from './Chunk';
+import { Deposit } from './Deposit';
 import { Piece } from './Piece';
 import { Resource } from './Resource';
 import { Robot } from './Robot';
@@ -258,5 +260,67 @@ describe('grace-period parking (§4.7)', () => {
     expect(robot.x).toBe(x0);
     expect(robot.y).toBe(y0);
     expect(robot.carrying).toBe(true); // load survives for the reconnecting owner
+  });
+});
+
+describe('surface mining (§ Phase 2)', () => {
+  it('Deposit.extract depletes, refuses an empty vein, and regen caps at max', () => {
+    const d = new Deposit(3_000_001, 'ore', 0, 0, 1);
+    expect(d.extract()).toBe(true);
+    expect(d.amount).toBe(0);
+    expect(d.extract()).toBe(false); // tapped out
+    d.regen(1000); // a huge dt
+    expect(d.amount).toBe(DEPOSIT_MAX); // refill is capped at the vein's max
+  });
+
+  function mineSetup(amount = DEPOSIT_MAX) {
+    const chunk = new Chunk();
+    const robot = new Robot(1, 'r', 100, 200, false, 1);
+    chunk.addOccupant(robot);
+    const dep = new Deposit(3_000_001, 'ore', 100, 120, amount);
+    chunk.addDeposit(dep);
+    chunk.drainEvents();
+    let now = 0;
+    const until = (cond: () => boolean, max = 400): void => {
+      for (let i = 0; i < max && !cond(); i++) {
+        now += 100;
+        chunk.step(0.1, now);
+      }
+    };
+    return { chunk, robot, dep, until };
+  }
+
+  it('digs an ore vein into a carried load and emits a pickup', () => {
+    const { chunk, robot, dep, until } = mineSetup();
+    chunk.applyIntent(robot.id, interact(dep.id));
+    until(() => robot.carrying);
+
+    expect(robot.carrying).toBe(true);
+    expect(dep.amount).toBeLessThan(DEPOSIT_MAX); // a load came out
+    expect(dep.amount).toBeGreaterThan(DEPOSIT_MAX - 2); // ...just the one
+    expect(chunk.drainEvents().map((e) => e.name)).toContain(DomainEvent.ResourcePickedUp);
+  });
+
+  it('will not mine a tapped-out vein', () => {
+    const { chunk, robot, until } = mineSetup(0);
+    chunk.applyIntent(robot.id, interact(3_000_001));
+    expect(robot.pendingAction).toBeNull(); // nothing queued for an empty vein
+
+    until(() => robot.carrying, 20);
+    expect(robot.carrying).toBe(false);
+  });
+
+  it('mined material feeds the build loop (deliver places a ghost)', () => {
+    const { chunk, robot, dep, until } = mineSetup();
+    const piece = new Piece(1_000_001, 'p', 100, 300);
+    chunk.addPiece(piece);
+
+    chunk.applyIntent(robot.id, interact(dep.id));
+    until(() => robot.carrying);
+    chunk.applyIntent(robot.id, interact(piece.id));
+    until(() => piece.status === PieceStatus.Placed);
+
+    expect(piece.status).toBe(PieceStatus.Placed);
+    expect(robot.carrying).toBe(false);
   });
 });

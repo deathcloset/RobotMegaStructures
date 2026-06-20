@@ -20,16 +20,44 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
 
-**Slice 1: the wrapping world & surface aesthetic.** The single 1024² square
-becomes a wide **side-scrolling planet whose X axis wraps** — walk far enough
-left or right and you arrive back where you started — with a real **surface, sky,
-and atmosphere**, the megastructure now standing on the ground and rising toward
-the sky. This lays the aesthetic down early and makes the netcode wrap-ready for
-the rest of Phase 2 (Ben's steer, 2026-06-20). Still one wide chunk: the chunk
-**grid + OSHA handoff**, **surface mining**, and **commandable crews/swarms** are
-the next slices.
+Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
+first). Still one wide chunk; the chunk **grid + OSHA handoff** and **commandable
+crews/swarms** are the slices still to come.
 
-### Added
+### Slice 2 — surface mining ⛏️
+
+Now there's a reason to roam the wide world: **ore veins scattered around the
+planet surface** that you mine for material. Depots become the convenient starter;
+veins are the wider story (Ben's steer).
+
+- **Ore deposits** (`EntityKind.Deposit`): renewable veins seeded around the planet
+  surface, away from the structure — so prospecting means actually walking the
+  world. A vein holds a few loads and slowly refills between visits, so heavy use
+  depletes it but the planet never runs dry; `status` carries its remaining richness.
+- **Mining** through the one `applyIntent` chokepoint: an empty-handed robot taps a
+  vein, walks there, **digs for a beat**, and carries off a load — which feeds the
+  existing build loop unchanged (deliver/weld don't care where material came from).
+  The server resolves pickup-vs-mine-vs-deliver by context; the client never asserts
+  it (§4.2).
+- **Client**: veins render as faceted ore rocks whose size/brightness track their
+  richness (a tapped-out vein dims until it regenerates); tap-to-mine rides the same
+  context-resolved tap.
+- **Protocol** → **6**: adds the ore-deposit entity kind (wire shape unchanged — it's
+  another entity on the existing snapshot path).
+- **Proven**: unit (57 tests, +4) — vein extract/refill caps, a robot digging a load
+  + emitting a pickup, a tapped-out vein refusing to be mined, and mined material
+  completing a ghost. Wire (built server): 10 veins seeded; a client walked to the
+  nearest vein, mined it, and carried off a load (richness 6 → 5).
+
+### Slice 1 — the wrapping world & surface aesthetic
+
+The single 1024² square becomes a wide **side-scrolling planet whose X axis wraps**
+— walk far enough left or right and you arrive back where you started — with a real
+**surface, sky, and atmosphere**, the megastructure now standing on the ground and
+rising toward the sky. Lays the aesthetic down early and makes the netcode
+wrap-ready for the rest of Phase 2 (Ben's steer, 2026-06-20).
+
+**Added**
 - **Cylinder geometry** (`shared/world.ts`): `wrapX`, `wrapDeltaX` (shortest signed
   step across the seam), and `wrappedDistance` — the wrap math decided **once** and
   shared byte-for-byte by the server (authoritative) and the client (camera +
@@ -45,7 +73,7 @@ the next slices.
   unwraps seam crossings (continuous X), so a robot stepping across the seam glides
   the short way instead of zipping back around the world.
 
-### Changed
+**Changed**
 - **World model** (`shared/constants.ts`): `WORLD_SIZE` (square) → `WORLD_WIDTH`
   (wraps) + `WORLD_HEIGHT` + `GROUND_Y` + `WORLD_WRAP_X`. Movement, interaction
   range, nearest-entity search, and the **viewport AOI filter** all now measure X
@@ -57,25 +85,21 @@ the next slices.
   it you keep meeting robots at work. Robots are clamped to the surface (Y), free
   around it (X).
 
-### Protocol
-- `PROTOCOL_VERSION` → **5**: `S_WELCOME` now carries rectangular `worldBounds`
-  plus `groundY` and `wrapX`, so the client adopts the world geometry from the
-  server instead of assuming a square.
+**Protocol** — `PROTOCOL_VERSION` → **5**: `S_WELCOME` carries rectangular
+`worldBounds` plus `groundY` and `wrapX`, so the client adopts the world geometry
+from the server instead of assuming a square. (Raised again to **6** in slice 2.)
 
-### Proven
-- Unit (53 tests, +11): the wrap math (incl. shortest-path across the seam),
-  wrap-aware movement (short way + result wrapped into range), and seam-crossing
-  interpolation continuity. The Phase 1 build/weld/resilience suite is unchanged
-  and still green.
-- Wire (built server): boots `4096x1024 wrapX groundY=896`; a v5 client receives
-  the new welcome fields; **8 builder bots placed 11/18 pieces in ~9 s** in the new
-  surface layout (the build loop + two-robot weld carry over unchanged).
+**Proven** — unit (53 tests, +11): the wrap math (incl. shortest-path across the
+seam), wrap-aware movement, and seam-crossing interpolation continuity. Wire (built
+server): boots `4096x1024 wrapX groundY=896`; **8 builder bots placed 11/18 pieces
+in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite carries
+over unchanged.
 
 ### Next (still in Phase 2)
-- Surface-resource search + **mining/digging** (a new entity kind + intent through
-  the same `applyIntent` chokepoint), **commandable AI crews/swarms** + a
-  delivery-swarm robot type, and the **chunk grid + OSHA handoff** (grow
-  `ChunkRegistry` from one wide chunk to many; AOI is already wrap-ready).
+- **Commandable AI crews/swarms** + a delivery-swarm robot type (builders are the
+  seed — and a natural next step is letting them mine too), and the **chunk grid +
+  OSHA handoff** (grow `ChunkRegistry` from one wide chunk to many; AOI is already
+  wrap-ready).
 
 ---
 

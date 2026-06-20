@@ -7,8 +7,9 @@ export const APP_CODENAME = 'First Bolt';
  *  v3 (Phase 1): adds the session token for reconnect/resume (§4.7).
  *  v4 (Phase 1): adds the two-robot weld piece kind + reservation events.
  *  v5 (Phase 2): wide wrapping world — S_WELCOME carries groundY + wrapX and
- *               rectangular worldBounds (the world is a cylinder, see below). */
-export const PROTOCOL_VERSION = 5;
+ *               rectangular worldBounds (the world is a cylinder, see below).
+ *  v6 (Phase 2): adds the ore-deposit entity kind (surface mining). */
+export const PROTOCOL_VERSION = 6;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;
@@ -72,3 +73,14 @@ export const WELD_RESERVATION_TTL_MS = 12_000;
 /** How long both robots must stay engaged for the weld to finish. Comfortably
  *  above the ~1s lag budget so the cooperation is forgiving and visible. */
 export const WELD_DURATION_MS = 2000;
+
+/** Surface mining (§ Phase 2). How long a robot digs a vein to extract one load
+ *  — visible effort, comfortably above the ~1s lag budget. */
+export const MINE_DURATION_MS = 1800;
+/** Loads a full ore vein holds (also the max value of a Deposit's `status`). */
+export const DEPOSIT_MAX = 6;
+/** Renewable veins slowly refill between visits (loads per second), so heavy
+ *  mining depletes a vein but the planet never runs dry. */
+export const DEPOSIT_REGEN_PER_SEC = 0.15;
+/** How many ore deposits to scatter around the planet surface. */
+export const DEPOSIT_COUNT = 10;

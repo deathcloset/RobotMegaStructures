@@ -11,6 +11,11 @@ export enum EntityKind {
    *  PieceStatus state machine, rendered distinctly so players know it needs a
    *  partner. */
   WeldPiece = 3,
+  /** An ore deposit on the planet surface — mine it for material (§ Phase 2).
+   *  A renewable vein: `status` carries its remaining richness (0..DEPOSIT_MAX)
+   *  so the client can show how full it is. The reason to roam the wide world;
+   *  depots are the convenient starter, veins are the wider story. */
+  Deposit = 4,
 }
 
 /**

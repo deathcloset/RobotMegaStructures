@@ -30,6 +30,7 @@ export class Stage {
   private pieceTex!: Texture;
   private resourceTex!: Texture;
   private cargoTex!: Texture;
+  private depositTex!: Texture;
   private readonly sprites = new Map<number, Sprite>();
   /** Small "held material" marker shown above a carrying robot. */
   private readonly cargo = new Map<number, Sprite>();
@@ -59,6 +60,7 @@ export class Stage {
     this.pieceTex = this.makeSquareTexture(30, 6);
     this.resourceTex = this.makeSquareTexture(34, 8);
     this.cargoTex = this.makeSquareTexture(12, 2);
+    this.depositTex = this.makeSquareTexture(26, 4); // rendered as a faceted rock
   }
 
   get canvas(): HTMLCanvasElement {
@@ -194,6 +196,7 @@ export class Stage {
   private texFor(kind: number): Texture {
     if (kind === EntityKind.Piece || kind === EntityKind.WeldPiece) return this.pieceTex;
     if (kind === EntityKind.Resource) return this.resourceTex;
+    if (kind === EntityKind.Deposit) return this.depositTex;
     return this.robotTex;
   }
 
@@ -230,6 +233,16 @@ export class Stage {
         sprite.alpha = 1;
         sprite.scale.set(1);
         break;
+      case EntityKind.Deposit: {
+        // An ore vein, drawn as a faceted rock (a rotated square). Richer veins
+        // read bigger + brighter; a tapped-out vein dims until it regenerates.
+        const richness = e.status; // 0..DEPOSIT_MAX
+        sprite.rotation = Math.PI / 4;
+        sprite.tint = richness > 0 ? 0xc8884a : 0x55524a;
+        sprite.alpha = richness > 0 ? 0.95 : 0.4;
+        sprite.scale.set(0.55 + 0.1 * richness);
+        break;
+      }
       default: {
         const isMe = e.id === this.myRobotId;
         sprite.tint = isMe ? 0x46e3a0 : e.id < 0 ? 0x6b7785 : 0x4a90d9;

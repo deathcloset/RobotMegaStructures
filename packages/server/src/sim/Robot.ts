@@ -6,7 +6,8 @@ import { advanceToward } from './movement';
 export type PendingAction =
   | { kind: 'pickup'; targetId: number }
   | { kind: 'deliver'; targetId: number }
-  | { kind: 'weld'; targetId: number };
+  | { kind: 'weld'; targetId: number }
+  | { kind: 'mine'; targetId: number };
 
 export class Robot {
   readonly id: number;
@@ -33,6 +34,9 @@ export class Robot {
   /** Weld piece this robot is currently holding/welding (§10). While engaged it
    *  holds position and isn't reassigned; the Chunk's weld logic frees it. */
   engagedPieceId: number | null = null;
+  /** When the current dig of an ore vein finishes (§ Phase 2 mining); null when
+   *  not mining. The robot holds at the vein until then. */
+  mineUntil: number | null = null;
   /** Movement speed (world units/sec). Builders run a little slower than players. */
   speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot
