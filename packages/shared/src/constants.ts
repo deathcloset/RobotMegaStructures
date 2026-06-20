@@ -1,11 +1,12 @@
 /** Human-facing project version + milestone codename (see CHANGELOG.md). */
-export const APP_VERSION = '0.1.0';
-export const APP_CODENAME = 'First Light';
+export const APP_VERSION = '0.2.0';
+export const APP_CODENAME = 'First Bolt';
 
 /** Bumped on any wire-protocol change; C_HELLO is rejected on mismatch.
  *  v2 (Phase 1): adds the interact intent + piece/resource entity kinds.
- *  v3 (Phase 1): adds the session token for reconnect/resume (§4.7). */
-export const PROTOCOL_VERSION = 3;
+ *  v3 (Phase 1): adds the session token for reconnect/resume (§4.7).
+ *  v4 (Phase 1): adds the two-robot weld piece kind + reservation events. */
+export const PROTOCOL_VERSION = 4;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;
@@ -43,3 +44,11 @@ export const DEFAULT_GRACE_PERIOD_MS = 120_000;
 /** After a contract completes, pause this long (the celebration) before the
  *  blueprint resets to fresh ghosts so building loops (§2.5 "another contract"). */
 export const DEFAULT_CONTRACT_RESET_MS = 6000;
+
+/** Two-robot weld (§10): how long a holder waits for a welding partner before
+ *  giving up and releasing the piece back to ghost (a reservation TTL, so a
+ *  missing/dropped partner never deadlocks the piece). */
+export const WELD_RESERVATION_TTL_MS = 12_000;
+/** How long both robots must stay engaged for the weld to finish. Comfortably
+ *  above the ~1s lag budget so the cooperation is forgiving and visible. */
+export const WELD_DURATION_MS = 2000;

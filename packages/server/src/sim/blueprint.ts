@@ -26,10 +26,12 @@ export function seedContract(chunk: Chunk, repo: WorldRepo): void {
 
   let n = 0;
   for (let r = 0; r < rows; r++) {
+    // The top row is two-robot weld pieces — the high beams need a buddy (§10).
+    const weld = r === rows - 1;
     for (let c = 0; c < cols; c++) {
       const x = startX + c * spacing;
       const y = baseY - r * spacing; // higher rows sit further up the screen
-      chunk.addPiece(new Piece(PIECE_ID_BASE + n, repo.nextStableId('piece'), x, y));
+      chunk.addPiece(new Piece(PIECE_ID_BASE + n, repo.nextStableId('piece'), x, y, weld));
       n += 1;
     }
   }

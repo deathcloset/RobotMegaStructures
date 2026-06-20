@@ -4,13 +4,15 @@ A browser game where lots of little robots build an enormous structure together,
 joinable from a link on the cheapest phone. See the full vision in
 [`Robot-Mega-Structures-Design-Doc-v1.1.md`](./Robot-Mega-Structures-Design-Doc-v1.1.md).
 
-**Status: v0.1.0 "First Light" 🌅** (Phase 0 complete) — see [`CHANGELOG.md`](./CHANGELOG.md)
+**Status: v0.2.0 "First Bolt" 🔩** (Phase 1 complete) — see [`CHANGELOG.md`](./CHANGELOG.md)
 for what shipped and [`HANDOFF.md`](./HANDOFF.md) to pick up development.
 
-**What works today (Phase 0):** a live game screen — robots wandering a site, with
-click-to-move, pan, and zoom — running on a real authoritative server. It's the
-foundation ("prove the pipe"); the build/crafting gameplay comes next. But you can
-already host it and let testers move robots around together. 🤖
+**What works today (Phase 1):** a real build loop on a live authoritative server —
+robots haul material from depots to a ghost blueprint and place it; a top row of
+**two-robot weld** pieces needs a holder + a welder (a player *or* an AI bot);
+**autonomous builder bots** keep the worksite bustling; finished contracts loop to
+a fresh blueprint; and dropped phones **reconnect and resume the same robot**
+(position + carried item intact). Click/tap to move, pan, zoom, and build. 🤖
 
 ---
 

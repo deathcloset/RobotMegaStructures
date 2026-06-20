@@ -116,7 +116,7 @@ export class Stage {
   }
 
   private texFor(kind: number): Texture {
-    if (kind === EntityKind.Piece) return this.pieceTex;
+    if (kind === EntityKind.Piece || kind === EntityKind.WeldPiece) return this.pieceTex;
     if (kind === EntityKind.Resource) return this.resourceTex;
     return this.robotTex;
   }
@@ -128,6 +128,25 @@ export class Stage {
         sprite.tint = placed ? 0xe0a24e : 0x5a86c0;
         sprite.alpha = placed ? 1 : 0.28;
         sprite.scale.set(1);
+        break;
+      }
+      case EntityKind.WeldPiece: {
+        // Distinct from normal pieces: violet ghost ("needs a buddy"), orange when
+        // a holder is waiting for a welder, bright while welding, amber when done.
+        if (e.status === PieceStatus.Placed) {
+          sprite.tint = 0xe0a24e;
+          sprite.alpha = 1;
+        } else if (e.status === PieceStatus.InProgress) {
+          sprite.tint = 0xffd23f;
+          sprite.alpha = 0.95;
+        } else if (e.status === PieceStatus.Reserved) {
+          sprite.tint = 0xff8c42;
+          sprite.alpha = 0.8;
+        } else {
+          sprite.tint = 0x9b6bd6;
+          sprite.alpha = 0.34;
+        }
+        sprite.scale.set(1.1);
         break;
       }
       case EntityKind.Resource:

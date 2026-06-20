@@ -14,6 +14,9 @@ export enum DomainEvent {
   PiecePlaced = 11,
   ContractCompleted = 12,
   ContractStarted = 13,
+  // Two-robot weld (Phase 1, §10)
+  PieceReserved = 14,
+  PieceReleased = 15,
   // Reserved (slice 2 — two-robot weld, §10): PieceReserved,
   // PieceReservationExpired, PieceProgressed ...
 }

@@ -7,6 +7,10 @@ export enum EntityKind {
   Piece = 1,
   /** A resource pile / depot a robot grabs material from (§3 build loop). */
   Resource = 2,
+  /** A two-robot weld piece — needs a holder + a welder to place (§10). Same
+   *  PieceStatus state machine, rendered distinctly so players know it needs a
+   *  partner. */
+  WeldPiece = 3,
 }
 
 /**
@@ -22,9 +26,10 @@ export enum RobotStatusBit {
 }
 
 /**
- * Piece assembly state machine (§4.2). Slice 1 of Phase 1 transitions
- * Ghost → Placed directly on a single-robot delivery; Reserved/InProgress are the
- * two-robot weld path (§10), wired in slice 2. Encoded as the entity `status`.
+ * Piece assembly state machine (§4.2, §10). A normal piece goes Ghost → Placed on
+ * a single delivery. A weld piece goes Ghost → Reserved (a holder arrived with
+ * the beam, awaiting a partner) → InProgress (welder joined, welding) → Placed;
+ * any drop/TTL releases it back to Ghost. Encoded as the entity `status`.
  */
 export enum PieceStatus {
   Ghost = 0,

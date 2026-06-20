@@ -1,17 +1,23 @@
-import { DEFAULT_CONTRACT_RESET_MS, DomainEvent, MessageType, PieceStatus } from '@rms/shared';
+import {
+  DEFAULT_CONTRACT_RESET_MS,
+  DomainEvent,
+  MessageType,
+  PieceStatus,
+  WELD_DURATION_MS,
+  WELD_RESERVATION_TTL_MS,
+} from '@rms/shared';
 import { describe, expect, it } from 'vitest';
 import { Chunk } from './Chunk';
 import { Piece } from './Piece';
 import { Resource } from './Resource';
 import { Robot } from './Robot';
 
+const interact = (targetId: number) => ({ t: MessageType.C_INTENT_INTERACT, targetId }) as const;
+const moveTo = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_MOVE, tx, ty }) as const;
+
 /** Drive the sim forward until `done()` or a step cap. */
 function run(chunk: Chunk, done: () => boolean, maxSteps = 50): void {
   for (let i = 0; i < maxSteps && !done(); i++) chunk.step(0.1, Date.now());
-}
-
-function interact(targetId: number) {
-  return { t: MessageType.C_INTENT_INTERACT, targetId } as const;
 }
 
 function setup() {
@@ -129,6 +135,109 @@ describe('NPC builder bots', () => {
 
     expect(piece.status).toBe(PieceStatus.Placed);
     expect(builder.carrying).toBe(false);
+  });
+});
+
+describe('two-robot weld (§10)', () => {
+  /** A weld piece with a holder already carrying nearby and an idle welder. */
+  function weldSetup() {
+    const chunk = new Chunk();
+    const holder = new Robot(1, 'holder', 110, 130, false, 1);
+    holder.carrying = true; // arrived with the beam
+    const welder = new Robot(2, 'welder', 130, 130, false, 2);
+    chunk.addOccupant(holder);
+    chunk.addOccupant(welder);
+    const weld = new Piece(1_000_001, 'weld_1', 120, 100, true);
+    chunk.addPiece(weld);
+    chunk.drainEvents();
+    let now = 0;
+    const until = (cond: () => boolean, max = 200): void => {
+      for (let i = 0; i < max && !cond(); i++) {
+        now += 100;
+        chunk.step(0.1, now);
+      }
+    };
+    const jump = (ms: number): void => {
+      now += ms;
+      chunk.step(0.1, now);
+    };
+    return { chunk, holder, welder, weld, until, jump };
+  }
+
+  it('two robots (holder + welder) complete a weld piece', () => {
+    const { chunk, holder, welder, weld, until, jump } = weldSetup();
+
+    chunk.applyIntent(holder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.Reserved);
+    expect(weld.status).toBe(PieceStatus.Reserved);
+    expect(weld.holderId).toBe(holder.id);
+    expect(holder.carrying).toBe(true); // still holding the beam
+
+    chunk.applyIntent(welder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.InProgress);
+    expect(weld.status).toBe(PieceStatus.InProgress);
+
+    jump(WELD_DURATION_MS + 50); // both stay engaged → weld finishes
+    expect(weld.status).toBe(PieceStatus.Placed);
+    expect(holder.carrying).toBe(false); // beam consumed
+    expect(chunk.placedCount).toBe(1);
+    expect(chunk.drainEvents().map((e) => e.name)).toContain(DomainEvent.PiecePlaced);
+  });
+
+  it('releases a lone reservation after the TTL (no deadlock)', () => {
+    const { chunk, holder, weld, until, jump } = weldSetup();
+    chunk.applyIntent(holder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.Reserved);
+
+    jump(WELD_RESERVATION_TTL_MS + 100); // no welder ever came
+    expect(weld.status).toBe(PieceStatus.Ghost);
+    expect(weld.holderId).toBeNull();
+    expect(holder.carrying).toBe(true); // holder keeps its beam to try elsewhere
+    expect(chunk.drainEvents().map((e) => e.name)).toContain(DomainEvent.PieceReleased);
+  });
+
+  it('releases the piece if the holder drops while reserved', () => {
+    const { chunk, holder, weld, until, jump } = weldSetup();
+    chunk.applyIntent(holder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.Reserved);
+
+    chunk.removeOccupant(holder.id); // holder vanishes (grace expired)
+    jump(100);
+    expect(weld.status).toBe(PieceStatus.Ghost);
+  });
+
+  it('demotes back to reserved if the welder leaves mid-weld', () => {
+    const { chunk, holder, welder, weld, until, jump } = weldSetup();
+    chunk.applyIntent(holder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.Reserved);
+    chunk.applyIntent(welder.id, interact(weld.id));
+    until(() => weld.status === PieceStatus.InProgress);
+
+    chunk.applyIntent(welder.id, moveTo(800, 800)); // welder walks off
+    jump(100);
+    expect(weld.status).toBe(PieceStatus.Reserved);
+    expect(weld.welderId).toBeNull();
+    expect(holder.carrying).toBe(true);
+  });
+
+  it('two builder bots weld a piece autonomously', () => {
+    const chunk = new Chunk();
+    const b1 = new Robot(-1, 'bot_1', 100, 200, true);
+    b1.isBuilder = true;
+    const b2 = new Robot(-2, 'bot_2', 200, 200, true);
+    b2.isBuilder = true;
+    chunk.addOccupant(b1);
+    chunk.addOccupant(b2);
+    chunk.addResource(new Resource(2_000_001, 'depot', 150, 250));
+    const weld = new Piece(1_000_001, 'weld_1', 150, 100, true);
+    chunk.addPiece(weld);
+
+    let now = 0;
+    for (let i = 0; i < 800 && weld.status !== PieceStatus.Placed; i++) {
+      now += 100;
+      chunk.step(0.1, now);
+    }
+    expect(weld.status).toBe(PieceStatus.Placed);
   });
 });
 

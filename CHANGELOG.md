@@ -8,8 +8,8 @@ How we version (pre-1.0 proof-of-concept):
 
 | Version | Codename | Phase |
 |---|---|---|
-| **v0.1.0** | **First Light** 🌅 | 0 — skeleton / prove the pipe ← we are here |
-| v0.2.0 | First Bolt 🔩 | 1 — the build loop / prove the fun |
+| v0.1.0 | First Light 🌅 | 0 — skeleton / prove the pipe |
+| **v0.2.0** | **First Bolt** 🔩 | 1 — the build loop / prove the fun ← we are here |
 | v0.3.0 | Full House 🏟️ | 2 — scale the population |
 | v0.4.0 | Roots 🌱 | 3 — identity & stickiness |
 | v1.0.0 | Grand Opening 🎉 | public launch |
@@ -18,13 +18,12 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ---
 
-## [Unreleased] — "First Bolt" 🔩 — Phase 1 in progress
+## v0.2.0 — "First Bolt" 🔩 — 2026-06-20
 
-**Phase 1: the build loop (prove the fun).** The single-robot build loop end to
-end, a living worksite of autonomous builder bots, connection resilience, and a
-looping contract — pleasant to play on real phones. The version stays `0.1.0`
-until Phase 1 is complete (the two-robot weld is the last piece); the wire
-protocol bumps now.
+**Phase 1: the build loop (prove the fun).** Wandering dots became a game: a real
+build loop, a living worksite of autonomous builder bots, two-robot cooperative
+welding (player *or* AI partner), connection resilience for cheap phones, and a
+contract that loops. Played live with three players across two phones and a PC.
 
 ### Added
 - **Build pieces & resource depots** (`shared`): two new entity kinds (`Piece`,
@@ -47,6 +46,16 @@ protocol bumps now.
   AI bots work but "not as well as players." The blueprint grew to an 18-piece
   block with four spread-out depots so a crowd (AI + human) has room. This is the
   seed of the commandable crew/swarm and the AI weld-partner.
+- **Two-robot weld** (`EntityKind.WeldPiece`, §10) — the cooperation-under-lag
+  test. The top row of the blueprint needs **two robots**: a *holder* (who brought
+  the beam, stays carrying) takes it Ghost → Reserved, then a *welder* joins for
+  Reserved → InProgress, and after a short weld both present → Placed. Either role
+  can be a **player or an AI bot** — cooperation is available but never forced;
+  builder bots pair up to weld on their own and will jump in to partner a player.
+  A reservation **TTL** plus per-tick participant checks mean a dropped/leaving
+  partner never deadlocks the piece (it releases to ghost, or demotes to awaiting
+  a partner) — the same resilience thinking as §4.7. Events: `PieceReserved`,
+  `PieceReleased`.
 - **Connection resilience (§4.7)** — reconnection is the common case on cheap
   phones, not an edge case:
   - each player robot gets a **session token** (in `S_WELCOME`); the client saves
@@ -70,24 +79,26 @@ protocol bumps now.
   ghost → placed flip; the delta now restates any entity whose `status` changed.
 
 ### Protocol
-- `PROTOCOL_VERSION` → **3** (v2: interact intent + piece/resource kinds + robot
-  status bitfield; v3: session token in hello/welcome for reconnect resume).
+- `PROTOCOL_VERSION` → **4** (v2: interact intent + piece/resource kinds + status
+  bitfield; v3: session token for reconnect resume; v4: weld-piece kind + events).
 
 ### Proven
-- Unit (37 tests): the build loop and completion (idempotent), the contract loop
+- Unit (42 tests): the build loop + completion (idempotent), the contract loop
   reset, move-cancels-action, empty-handed-deliver no-op, the delta status-change,
-  a parked robot holding position + load, an **NPC builder autonomously placing a
-  piece**, and client **reconnect resilience** (connect-watchdog, zombie-socket
-  teardown, superseded-socket guard).
-- Wire (built server, both snapshot modes): full build loop at v3; reconnect
-  mid-carry resumes the **same robot** (`resumed=true`) with position + load
-  intact, across multiple cycles; and **8 builder bots complete and auto-loop a
-  full contract with no human input**.
+  a parked robot holding position + load, an NPC builder autonomously placing a
+  piece, **the two-robot weld** (completion + TTL release + holder-drop release +
+  welder-leave demote + two bots welding autonomously), and client **reconnect
+  resilience** (connect-watchdog, zombie-socket teardown, superseded-socket guard).
+- Wire (built server): full build loop at v4; reconnect mid-carry resumes the
+  **same robot** (`resumed=true`) with position + load intact across cycles;
+  builder bots complete + auto-loop a full contract; and **10 builder bots pair up
+  to weld (Reserved → InProgress → Placed) and finish an 18-piece contract — incl.
+  6 weld pieces — with no human input**.
+- Played live with three players (two phones + a PC).
 
-### Next (completes Phase 1)
-- The **two-robot weld** (one holds, one welds) with a reservation **TTL** built
-  on this same grace mechanism (§4.7, §10) — cooperation under lag with no
-  deadlock when a partner drops. Version bumps to **v0.2.0 "First Bolt" 🔩** then.
+### Next (Phase 2 territory)
+- A side-scrolling landscape that wraps into a circular planet, surface-resource
+  search + mining, and the wider aesthetic pass — plus commandable AI crews.
 
 ---
 

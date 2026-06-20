@@ -7,6 +7,8 @@ import {
   INTERACT_RANGE,
   MessageType,
   PieceStatus,
+  WELD_DURATION_MS,
+  WELD_RESERVATION_TTL_MS,
   WORLD_SIZE,
 } from '@rms/shared';
 import type { Piece } from './Piece';
@@ -44,6 +46,8 @@ export class Chunk {
 
   removeOccupant(robotId: number): void {
     if (this.robots.delete(robotId)) {
+      // Any weld this robot was part of self-heals in advanceWelds (it'll see the
+      // participant missing next tick and release/demote the piece).
       this.events.push({ name: DomainEvent.RobotLeftChunk, payload: { robotId } });
     }
   }
@@ -82,61 +86,92 @@ export class Chunk {
     const robot = this.robots.get(robotId);
     if (!robot) return;
     if (msg.t === MessageType.C_INTENT_MOVE) {
-      // A manual move redirects the robot and cancels any queued build action.
+      // A manual move redirects the robot, cancels any queued action, and lets go
+      // of any weld it was holding/welding.
+      robot.engagedPieceId = null;
       robot.pendingAction = null;
       robot.setTarget(clamp(msg.tx, 0, this.size), clamp(msg.ty, 0, this.size));
     } else if (msg.t === MessageType.C_INTENT_INTERACT) {
+      robot.engagedPieceId = null; // a new command releases any current weld hold
       this.applyInteract(robot, msg.targetId);
     }
   }
 
-  /** Queue a context-appropriate action: empty robots grab from a depot, loaded
-   *  robots deliver to a ghost piece. The server decides — the client can't lie. */
+  /** Queue a context-appropriate action. The server decides — the client can't
+   *  lie: empty robots grab a depot or weld a piece awaiting a partner; loaded
+   *  robots deliver to a ghost (placing it, or holding a weld piece). */
   private applyInteract(robot: Robot, targetId: number): void {
     if (!robot.carrying) {
       const res = this.resources.get(targetId);
       if (res) {
         robot.setTarget(res.x, res.y);
         robot.pendingAction = { kind: 'pickup', targetId };
+        return;
+      }
+      const weld = this.pieces.get(targetId);
+      if (weld?.weld && weld.status === PieceStatus.Reserved && weld.holderId !== robot.id) {
+        robot.setTarget(weld.x, weld.y);
+        robot.pendingAction = { kind: 'weld', targetId };
       }
       return;
     }
     const piece = this.pieces.get(targetId);
-    if (piece && piece.status === PieceStatus.Ghost) {
+    if (!piece) return;
+    if (piece.status === PieceStatus.Ghost) {
+      // deliver: a normal piece gets placed; a weld piece gets held (Reserved).
       robot.setTarget(piece.x, piece.y);
       robot.pendingAction = { kind: 'deliver', targetId };
+    } else if (piece.weld && piece.status === PieceStatus.Reserved && piece.holderId !== robot.id) {
+      // a carrying robot can also be the welder for someone else's hold
+      robot.setTarget(piece.x, piece.y);
+      robot.pendingAction = { kind: 'weld', targetId };
     }
   }
 
-  /** Advance the simulation one tick. Controlled players and builder NPCs resolve
-   *  queued build actions; builder NPCs also pick their next action; plain NPCs
-   *  wander; parked (dropped-owner) robots hold still until reclaimed or removed
-   *  (§4.7). `now` drives the contract reset and builder dawdle clocks. */
+  /** Advance the simulation one tick. Robots engaged in a weld hold still;
+   *  controlled players and builder NPCs resolve queued actions (builders also
+   *  pick the next one); plain NPCs wander; parked robots hold (§4.7). `now`
+   *  drives the weld, reservation-TTL, builder-dawdle, and contract-reset clocks. */
   step(dt: number, now: number): void {
     for (const robot of this.robots.values()) {
+      if (robot.engagedPieceId !== null) {
+        robot.halt(); // holding/welding — the weld logic frees it
+        continue;
+      }
       robot.step(dt);
       if (robot.isNpc) {
         if (robot.isBuilder) this.driveBuilder(robot, now);
         else if (!robot.moving)
           robot.setTarget(Math.random() * this.size, Math.random() * this.size);
       } else if (robot.controlled) {
-        this.resolvePending(robot);
+        this.resolvePending(robot, now);
       }
     }
+    this.advanceWelds(now);
     this.advanceContract(now);
   }
 
-  /** Autonomous build loop for an AI bot: haul from the nearest depot to the
-   *  nearest ghost, with a short dawdle between actions so it's visibly less
-   *  efficient than a player. The seed of the commandable crew/swarm. */
+  /** Autonomous build loop for an AI bot, including weld cooperation: weld a piece
+   *  awaiting a partner if there's one (no material needed), else haul from the
+   *  nearest depot to the nearest ghost. A short dawdle keeps bots visibly less
+   *  efficient than players. The seed of the commandable crew/swarm. */
   private driveBuilder(robot: Robot, now: number): void {
     if (robot.pendingAction !== null) {
-      this.resolvePending(robot);
-      // Action done (placed/picked up, or target vanished) → pause before the next.
-      if (robot.pendingAction === null) robot.nextActionAt = now + 400 + Math.random() * 1400;
+      this.resolvePending(robot, now);
+      // Finished (and not now holding/welding) → dawdle before the next action.
+      if (robot.pendingAction === null && robot.engagedPieceId === null) {
+        robot.nextActionAt = now + 400 + Math.random() * 1400;
+      }
       return;
     }
     if (now < robot.nextActionAt) return;
+
+    const weldNeedingPartner = this.nearestReservedWeld(robot.x, robot.y, robot.id);
+    if (weldNeedingPartner) {
+      robot.setTarget(weldNeedingPartner.x, weldNeedingPartner.y);
+      robot.pendingAction = { kind: 'weld', targetId: weldNeedingPartner.id };
+      return;
+    }
     if (!robot.carrying) {
       const depot = this.nearestResource(robot.x, robot.y);
       if (depot) {
@@ -151,6 +186,170 @@ export class Chunk {
       } else {
         robot.nextActionAt = now + 1000; // nothing to build (resetting) — wait
       }
+    }
+  }
+
+  /** Execute a robot's queued action once it's within interaction range. */
+  private resolvePending(robot: Robot, now: number): void {
+    const action = robot.pendingAction;
+    if (action === null) return;
+
+    if (action.kind === 'pickup') {
+      const res = this.resources.get(action.targetId);
+      if (!res) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, res)) return;
+      if (!robot.carrying) {
+        robot.carrying = true;
+        this.events.push({
+          name: DomainEvent.ResourcePickedUp,
+          payload: { robotId: robot.id, resourceId: res.id },
+        });
+      }
+    } else if (action.kind === 'deliver') {
+      const piece = this.pieces.get(action.targetId);
+      if (!piece) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, piece)) return;
+      if (robot.carrying && piece.status === PieceStatus.Ghost) {
+        if (piece.weld) {
+          // Hold the beam in place; await a welder (§10). Keep carrying.
+          piece.status = PieceStatus.Reserved;
+          piece.holderId = robot.id;
+          piece.reserveDeadline = now + WELD_RESERVATION_TTL_MS;
+          robot.engagedPieceId = piece.id;
+          this.events.push({ name: DomainEvent.PieceReserved, payload: { pieceId: piece.id } });
+        } else {
+          this.placePiece(piece, robot);
+        }
+      }
+    } else {
+      // 'weld': join someone's held piece as the welder.
+      const piece = this.pieces.get(action.targetId);
+      if (!piece) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, piece)) return;
+      if (
+        piece.weld &&
+        piece.status === PieceStatus.Reserved &&
+        piece.welderId === null &&
+        piece.holderId !== robot.id
+      ) {
+        piece.welderId = robot.id;
+        piece.status = PieceStatus.InProgress;
+        piece.weldDoneAt = now + WELD_DURATION_MS;
+        robot.engagedPieceId = piece.id;
+      }
+    }
+    robot.halt();
+    robot.pendingAction = null;
+  }
+
+  /** Tick the two-robot weld state machine: complete welds whose timer elapsed
+   *  with both robots still engaged, and release/demote on a missing partner or
+   *  an expired reservation TTL — so a dropped partner never deadlocks (§4.7/§10). */
+  private advanceWelds(now: number): void {
+    for (const piece of this.pieces.values()) {
+      if (!piece.weld) continue;
+      if (piece.status === PieceStatus.Reserved) {
+        const holder = this.engaged(piece.holderId, piece.id);
+        if (!holder || !holder.carrying || now > piece.reserveDeadline) {
+          this.releaseWeld(piece);
+        }
+      } else if (piece.status === PieceStatus.InProgress) {
+        const holder = this.engaged(piece.holderId, piece.id);
+        const welder = this.engaged(piece.welderId, piece.id);
+        if (!holder || !holder.carrying) {
+          this.releaseWeld(piece); // the beam's gone — drop it back to a ghost
+        } else if (!welder) {
+          // welder wandered off / dropped — back to awaiting a partner
+          piece.welderId = null;
+          piece.status = PieceStatus.Reserved;
+          piece.weldDoneAt = null;
+          piece.reserveDeadline = now + WELD_RESERVATION_TTL_MS;
+        } else if (piece.weldDoneAt !== null && now >= piece.weldDoneAt) {
+          this.completeWeld(piece);
+        }
+      }
+    }
+  }
+
+  /** Return the robot iff it exists and is still engaged on this exact piece. */
+  private engaged(robotId: number | null, pieceId: number): Robot | undefined {
+    if (robotId === null) return undefined;
+    const robot = this.robots.get(robotId);
+    return robot && robot.engagedPieceId === pieceId ? robot : undefined;
+  }
+
+  private releaseWeld(piece: Piece): void {
+    const holder = piece.holderId !== null ? this.robots.get(piece.holderId) : undefined;
+    const welder = piece.welderId !== null ? this.robots.get(piece.welderId) : undefined;
+    if (holder) holder.engagedPieceId = null; // keeps carrying its beam
+    if (welder) welder.engagedPieceId = null;
+    piece.reset();
+    this.events.push({ name: DomainEvent.PieceReleased, payload: { pieceId: piece.id } });
+  }
+
+  private completeWeld(piece: Piece): void {
+    const holder = piece.holderId !== null ? this.robots.get(piece.holderId) : undefined;
+    const welder = piece.welderId !== null ? this.robots.get(piece.welderId) : undefined;
+    if (holder) {
+      holder.carrying = false;
+      holder.engagedPieceId = null;
+    }
+    if (welder) welder.engagedPieceId = null;
+    piece.status = PieceStatus.Placed;
+    piece.holderId = null;
+    piece.welderId = null;
+    piece.weldDoneAt = null;
+    this.recordPlacement(piece.id);
+  }
+
+  private placePiece(piece: Piece, robot: Robot): void {
+    piece.status = PieceStatus.Placed;
+    robot.carrying = false;
+    this.recordPlacement(piece.id);
+  }
+
+  private recordPlacement(pieceId: number): void {
+    this.placed += 1;
+    this.events.push({
+      name: DomainEvent.PiecePlaced,
+      payload: { pieceId, placed: this.placed, total: this.pieces.size },
+    });
+    this.checkContractComplete();
+  }
+
+  /** Once a contract completes, hold the celebration briefly, then reset the
+   *  blueprint to fresh ghosts so building loops (§2.5 "another contract"). */
+  private advanceContract(now: number): void {
+    if (!this.completed) return;
+    if (this.completedAt === null) {
+      this.completedAt = now;
+      return;
+    }
+    if (now - this.completedAt >= DEFAULT_CONTRACT_RESET_MS) {
+      for (const piece of this.pieces.values()) piece.reset();
+      this.placed = 0;
+      this.completed = false;
+      this.completedAt = null;
+      this.events.push({ name: DomainEvent.ContractStarted, payload: { total: this.pieces.size } });
+    }
+  }
+
+  private checkContractComplete(): void {
+    if (!this.completed && this.pieces.size > 0 && this.placed >= this.pieces.size) {
+      this.completed = true;
+      this.events.push({
+        name: DomainEvent.ContractCompleted,
+        payload: { placed: this.placed, total: this.pieces.size },
+      });
     }
   }
 
@@ -181,74 +380,21 @@ export class Chunk {
     return best;
   }
 
-  /** Once a contract completes, hold the celebration briefly, then reset the
-   *  blueprint to fresh ghosts so building loops (§2.5 "another contract"). */
-  private advanceContract(now: number): void {
-    if (!this.completed) return;
-    if (this.completedAt === null) {
-      this.completedAt = now;
-      return;
-    }
-    if (now - this.completedAt >= DEFAULT_CONTRACT_RESET_MS) {
-      for (const piece of this.pieces.values()) piece.status = PieceStatus.Ghost;
-      this.placed = 0;
-      this.completed = false;
-      this.completedAt = null;
-      this.events.push({ name: DomainEvent.ContractStarted, payload: { total: this.pieces.size } });
-    }
-  }
-
-  /** Execute a robot's queued action once it's within interaction range. */
-  private resolvePending(robot: Robot): void {
-    const action = robot.pendingAction;
-    if (action === null) return;
-
-    if (action.kind === 'pickup') {
-      const res = this.resources.get(action.targetId);
-      if (!res) {
-        robot.pendingAction = null;
-        return;
-      }
-      if (!within(robot, res)) return;
-      if (!robot.carrying) {
-        robot.carrying = true;
-        this.events.push({
-          name: DomainEvent.ResourcePickedUp,
-          payload: { robotId: robot.id, resourceId: res.id },
-        });
-      }
-    } else {
-      const piece = this.pieces.get(action.targetId);
-      if (!piece) {
-        robot.pendingAction = null;
-        return;
-      }
-      if (!within(robot, piece)) return;
-      // Re-check at execution time: a piece another robot already placed is a
-      // no-op (the robot keeps its load and can deliver elsewhere).
-      if (robot.carrying && piece.status === PieceStatus.Ghost) {
-        piece.status = PieceStatus.Placed;
-        robot.carrying = false;
-        this.placed += 1;
-        this.events.push({
-          name: DomainEvent.PiecePlaced,
-          payload: { pieceId: piece.id, placed: this.placed, total: this.pieces.size },
-        });
-        this.checkContractComplete();
+  /** Nearest weld piece that has a holder but no welder yet (a partner is needed),
+   *  excluding one held by `excludeRobotId` (you can't weld your own hold). */
+  private nearestReservedWeld(x: number, y: number, excludeRobotId: number): Piece | null {
+    let best: Piece | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const piece of this.pieces.values()) {
+      if (!piece.weld || piece.status !== PieceStatus.Reserved) continue;
+      if (piece.welderId !== null || piece.holderId === excludeRobotId) continue;
+      const d = Math.hypot(piece.x - x, piece.y - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = piece;
       }
     }
-    robot.halt();
-    robot.pendingAction = null;
-  }
-
-  private checkContractComplete(): void {
-    if (!this.completed && this.pieces.size > 0 && this.placed >= this.pieces.size) {
-      this.completed = true;
-      this.events.push({
-        name: DomainEvent.ContractCompleted,
-        payload: { placed: this.placed, total: this.pieces.size },
-      });
-    }
+    return best;
   }
 
   /** Read-only projection of all entities (Phase 0 AOI = whole chunk). */

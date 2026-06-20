@@ -5,7 +5,8 @@ import { advanceToward } from './movement';
  *  Chunk sets this from an interact intent and resolves it on arrival. */
 export type PendingAction =
   | { kind: 'pickup'; targetId: number }
-  | { kind: 'deliver'; targetId: number };
+  | { kind: 'deliver'; targetId: number }
+  | { kind: 'weld'; targetId: number };
 
 export class Robot {
   readonly id: number;
@@ -29,6 +30,9 @@ export class Robot {
   /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
    *  so AI bots are visibly less efficient than players. */
   nextActionAt = 0;
+  /** Weld piece this robot is currently holding/welding (§10). While engaged it
+   *  holds position and isn't reassigned; the Chunk's weld logic frees it. */
+  engagedPieceId: number | null = null;
   /** Movement speed (world units/sec). Builders run a little slower than players. */
   speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot

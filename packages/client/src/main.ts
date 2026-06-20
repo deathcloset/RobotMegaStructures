@@ -124,18 +124,17 @@ function onEvent(name: DomainEvent, _payload: unknown): void {
 }
 
 /**
- * Resolve a tap to an intent. Empty-handed near a depot → grab; carrying near a
- * ghost piece → deliver; otherwise → move. The server re-validates either way
- * (§4.2), so this only picks the friendliest target under the finger.
+ * Resolve a tap to an intent. Empty-handed → grab a depot, or weld a piece that's
+ * awaiting a partner; carrying → deliver to a ghost (placing it, or holding a weld
+ * piece), or weld someone's hold. Otherwise → move. The server re-validates
+ * everything (§4.2), so this just picks the friendliest target under the finger.
  */
 function onTap(x: number, y: number): void {
   const carrying = myCarrying();
-  const wantKind = carrying ? EntityKind.Piece : EntityKind.Resource;
   let best: RenderEntity | null = null;
   let bestDist = TAP_PICK_RANGE;
   for (const e of rendered) {
-    if (e.kind !== wantKind) continue;
-    if (e.kind === EntityKind.Piece && e.status !== PieceStatus.Ghost) continue;
+    if (!actionable(e, carrying)) continue;
     const d = Math.hypot(e.x - x, e.y - y);
     if (d <= bestDist) {
       best = e;
@@ -147,6 +146,17 @@ function onTap(x: number, y: number): void {
   } else {
     conn.send({ t: MessageType.C_INTENT_MOVE, tx: x, ty: y });
   }
+}
+
+/** Can this robot act on entity `e` right now, given whether it's carrying? */
+function actionable(e: RenderEntity, carrying: boolean): boolean {
+  if (e.kind === EntityKind.Resource) return !carrying; // grab from a depot
+  if (e.kind === EntityKind.Piece) return carrying && e.status === PieceStatus.Ghost; // deliver
+  if (e.kind === EntityKind.WeldPiece) {
+    if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)
+    if (e.status === PieceStatus.Reserved) return true; // weld a waiting hold
+  }
+  return false;
 }
 
 function myCarrying(): boolean {
@@ -246,7 +256,7 @@ function updateHud(nowPerf: number): void {
   let placed = 0;
   let total = 0;
   for (const e of rendered) {
-    if (e.kind !== EntityKind.Piece) continue;
+    if (e.kind !== EntityKind.Piece && e.kind !== EntityKind.WeldPiece) continue;
     total += 1;
     if (e.status === PieceStatus.Placed) placed += 1;
   }
