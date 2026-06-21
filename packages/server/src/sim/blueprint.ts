@@ -12,17 +12,23 @@ const PIECE_ID_BASE = 1_000_000;
 const RESOURCE_ID_BASE = 2_000_000;
 const DEPOSIT_ID_BASE = 3_000_000;
 
+/** Vein placement across a section (fractions of its width), biased toward the
+ *  edges so they sit away from the structure in the middle. */
+const VEIN_FRACS = [0.12, 0.88, 0.3, 0.7, 0.5];
+
 /**
- * The starter contract: a multi-row block of ghost pieces standing ON the surface
- * and rising toward the sky (the megastructure begins), flanked by resource depots
- * spread along the ground so builder bots and players fan out on hauling journeys.
- * Depots sit a few hundred units to either side — far enough that the wide
- * wrapping world is felt, near enough to stay findable. Sized so a crowd of robots
- * — AI and human — has room to work before it completes and loops (§2.5, §3).
+ * Seed one section's self-contained worksite (§ Phase 2 chunk grid): a multi-row
+ * block of ghost pieces standing ON the surface and rising toward the sky (this
+ * section's slice of the megastructure), two flanking resource depots, and a few
+ * ore veins out toward the section's edges. Every section seeds its own, so the
+ * planet is a ring of worksites; entity ids are offset by the section id to stay
+ * disjoint across the wire. Sized so a crew — AI and human — has room to work
+ * before it completes and loops (§2.5, §3).
  */
 export function seedContract(chunk: Chunk, repo: WorldRepo): void {
-  const cx = chunk.width / 2; // the structure rises from the middle of the planet
+  const cx = chunk.centerX; // this section's worksite centre
   const ground = chunk.groundY;
+  const idBase = chunk.id * 1000; // keep ids disjoint across sections
   const cols = 6;
   const rows = 3;
   const spacing = 56;
@@ -36,31 +42,30 @@ export function seedContract(chunk: Chunk, repo: WorldRepo): void {
     for (let c = 0; c < cols; c++) {
       const x = startX + c * spacing;
       const y = baseY - r * spacing; // higher rows sit further up, toward the sky
-      chunk.addPiece(new Piece(PIECE_ID_BASE + n, repo.nextStableId('piece'), x, y, weld));
+      chunk.addPiece(new Piece(PIECE_ID_BASE + idBase + n, repo.nextStableId('piece'), x, y, weld));
       n += 1;
     }
   }
 
-  const onSurface = ground - 18; // depots rest on the ground
+  const onSurface = ground - 18; // depots + veins rest on the ground
   const depots: ReadonlyArray<readonly [number, number]> = [
     [cx - 320, onSurface],
     [cx + 320, onSurface],
-    [cx - 760, onSurface],
-    [cx + 760, onSurface],
   ];
   depots.forEach(([x, y], i) => {
-    chunk.addResource(new Resource(RESOURCE_ID_BASE + i, repo.nextStableId('depot'), x, y));
+    chunk.addResource(
+      new Resource(RESOURCE_ID_BASE + idBase + i, repo.nextStableId('depot'), x, y),
+    );
   });
 
-  // Ore veins scattered around the rest of the planet's surface — spaced roughly
-  // evenly across the far arc (away from the structure) so prospecting means
-  // actually roaming the wide wrapping world.
-  const arcStart = cx + 640; // just past the near depots
-  const arcSpan = chunk.width - 1280; // leave the structure's neighbourhood clear
+  // Ore veins out toward this section's edges so prospecting means roaming within
+  // — and across — sections.
+  const span = chunk.x1 - chunk.x0;
   for (let i = 0; i < DEPOSIT_COUNT; i++) {
-    const along = arcStart + (arcSpan * i) / (DEPOSIT_COUNT - 1);
-    const jitter = (Math.random() * 2 - 1) * 90;
-    const x = wrapX(along + jitter, chunk.width);
-    chunk.addDeposit(new Deposit(DEPOSIT_ID_BASE + i, repo.nextStableId('ore'), x, onSurface));
+    const frac = VEIN_FRACS[i % VEIN_FRACS.length]!;
+    const x = wrapX(chunk.x0 + frac * span, chunk.width);
+    chunk.addDeposit(
+      new Deposit(DEPOSIT_ID_BASE + idBase + i, repo.nextStableId('ore'), x, onSurface),
+    );
   }
 }

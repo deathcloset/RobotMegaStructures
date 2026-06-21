@@ -13,11 +13,13 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
 - **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
-  Phase 2 so far — **slice 1**: a wide **side-scrolling planet whose X axis wraps**,
-  with a real surface/sky/atmosphere; **slice 2**: **surface mining** — ore veins you
-  dig for material; **slice 3**: **commandable crews** — long-press a **work-flag** to
-  rally the builder crew to mine that area. Protocol **v7**. See CHANGELOG
-  "Unreleased". Remaining Phase 2 (a delivery-swarm type, the chunk grid) is below.
+  Phase 2 so far — **slice 1**: a wide **side-scrolling planet whose X axis wraps**;
+  **slice 2**: **surface mining** (ore veins); **slice 3**: **commandable crews**
+  (long-press a **work-flag** to rally the crew); **slice 4**: the **section grid +
+  interest management** — the planet is a ring of self-contained sections, a client
+  only subscribes to the section(s) under its viewport (measured **8.5×** egress cut),
+  and robots hand off across boundaries. Protocol **v7**. See CHANGELOG "Unreleased".
+  Remaining Phase 2 (OSHA caps + the checkpoint feel, a delivery-swarm type) is below.
 
 ## Run / operate
 
@@ -37,9 +39,10 @@ now that Phase 1 is on `main`, switch it back to `main` (`git checkout main`) so
 - `packages/shared` — wire protocol + codec + fixed-point + **cylinder wrap math
   (`world.ts`)**. **Change here = rebuild all three.** Bump `PROTOCOL_VERSION` on
   any protocol change.
-- `packages/server` — `SimLoop` (tick), `Chunk` (actor-shaped, the one mutation
-  entry is `applyIntent`), `Snapshotter` (full/delta), `WsGateway`, `Metrics`.
-  In-memory; `state/repository.ts` is the seam for Valkey/Postgres.
+- `packages/server` — `SimLoop` (tick), `ChunkRegistry` (the **section grid** + the
+  routing/interest/handoff indirection), `Chunk` (actor-shaped, one section, the one
+  mutation entry is `applyIntent`), `Snapshotter` (full/delta), `WsGateway`,
+  `Metrics`. In-memory; `state/repository.ts` is the seam for Valkey/Postgres.
 - `packages/client` — PixiJS; `EntityStore` + `interpolate` (smooths snapshots),
   `Camera`, `Input`, `Hud`.
 - `packages/bot` — headless load/lag harness.
@@ -85,8 +88,13 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
   mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
   **delivery-swarm** robot type for set-and-forget far ferrying.
-- See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of
-  finished structures, the megastructures game-set, optional robot personalities).
+- ◑ **Chunk grid + OSHA handoff** (slice 4 did the AOI/grid half, this branch) — the
+  planet is a ring of sections, interest is per-viewport (8.5× egress cut measured),
+  robots hand off across boundaries. **Next half:** the OSHA **cap** per section + the
+  queue-when-full **checkpoint** feel (§4.4). Then real multi-server distribution
+  (IDEAS.md "Distributed hosting" — Ben's vision: sections across small boxes).
+- See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
+  living/maintenance hosting of finished structures, the megastructures game-set).
 
 **What slice 1 settled (build on it, don't redo it):**
 - **The wrap math is decided once** in `shared/world.ts` (`wrapX`, `wrapDeltaX`,
@@ -97,25 +105,33 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   viewport," and **egress per client stays flat as the world grows** (keep watching
   `bytes_per_player_per_tick`). The world geometry rides `S_WELCOME` (v5).
 
-**Still the chunk/AOI moment (the remaining structural task).** The world is now a
-wide *single* wrapping chunk; it still needs to become *many* (design doc §4.3 grid
-+ §4.4 the OSHA cap = sharding boundary):
-- `ChunkRegistry` is the one indirection between "one chunk" and "many" — grow it
-  to a grid; keep `Chunk` an isolated message-in/state-out unit (the Elixir port
-  hedge, §5.4). Note `SimLoop`/`Snapshotter` currently read `chunks.primary`; the
-  grid generalizes that to "the chunks overlapping each client's viewport."
-- Mining (slice 2) is the worked example of adding an `EntityKind` (`Deposit`) +
-  a context-resolved action through the one `applyIntent` chokepoint and the
-  entity-neutral snapshot path — copy that shape for future kinds (colonists,
-  aliens, …).
+**What slice 4 built (the grid is now real).** The world is a ring of `CHUNK_COLS`
+sections; `ChunkRegistry` is the grid + the routing/interest/handoff indirection
+(`chunkAt`, `chunksInView`, `settle`). `SimLoop` snapshots each section once and each
+client gathers only the sections overlapping its viewport. Each `Chunk` owns a
+world-X slice (`x0..x1`, `centerX`) but still simulates in world coords with the
+global wrap, so it stays an isolated message-in/state-out unit (the Elixir/multi-box
+port hedge, §5.4). Mining (slice 2) is the worked example for adding new
+`EntityKind`s through the one `applyIntent` chokepoint — copy that shape.
 
-**Watch out:** the world is no longer square — it's `WORLD_WIDTH × WORLD_HEIGHT`
-with `GROUND_Y` and a wrapping X (see `shared/constants.ts`). `CHUNK_ID = 0` is
-still the single chunk. Two-rate loop, codec, interpolation, resilience, and the
-build/weld mechanics all carry over unchanged. When you add vertical zoom-out for a
-tall structure, remember the zoom-out floor is currently capped at one lap (camera
-`minScale`) — a taller world that wraps will want render-side tiling, not a looser
-cap.
+**Next: the OSHA half + then distribution.**
+- **Cap + checkpoint:** give `Chunk` a `capacity`; in `ChunkRegistry.settle`, refuse
+  to move a robot into a section already at cap (hold it at the boundary), and add the
+  queue-when-full backpressure + a client-side "zone full" cue. That's the §4.4
+  sharding boundary made playable.
+- **Multi-server:** the same `settle` handoff becomes a network handoff; `ChunkRegistry`
+  becomes the seam where a chunk is owned by another process/box, coordinated over
+  Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).
+  Don't build it until there's a second box to host (no consumer yet, §2.5).
+
+**Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
+(`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids
+`0..CHUNK_COLS-1`). A `Chunk`'s `width` is the **global** circumference (wrap), not
+its section width; `x0..x1` is its slice. Work-flags are kept inside their section
+and clear on a cross-boundary handoff (a known rough edge to revisit with the real
+checkpoint). The zoom-out floor is capped at one lap (camera `minScale`) — a taller
+world that wraps will want render-side tiling. Two-rate loop, codec, interpolation,
+resilience, and build/weld/mining/crew mechanics all carry over unchanged.
 
 ## Gotchas we learned (don't re-discover these)
 

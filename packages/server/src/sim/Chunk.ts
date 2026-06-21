@@ -1,5 +1,4 @@
 import {
-  CHUNK_ID,
   type ClientMessage,
   DEFAULT_CONTRACT_RESET_MS,
   DomainEvent,
@@ -9,6 +8,7 @@ import {
   MessageType,
   MINE_DURATION_MS,
   PieceStatus,
+  SECTION_WIDTH,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
   WORLD_HEIGHT,
@@ -39,9 +39,18 @@ export interface ChunkEvent {
  * applyIntent — the future "mailbox".
  */
 export class Chunk {
-  readonly id = CHUNK_ID;
-  /** Cylinder dimensions: width wraps (the seam), height is bounded, groundY is
-   *  the surface. Movement/distance/AOI all measure X the short way around. */
+  /** Section (column) index in the planet's chunk grid; also this chunk's id. */
+  readonly id: number;
+  /** The world-X slice this section owns, [x0, x1) — used by the registry to route
+   *  intents and gather per-viewport interest; the sim itself works in world
+   *  coords with a global wrap. */
+  readonly x0: number;
+  readonly x1: number;
+  /** X of this section's centre (where its worksite is seeded / framed). */
+  readonly centerX: number;
+  /** Planet circumference (the wrap width). Movement/distance/AOI measure X the
+   *  short way around THIS, not the section width. Height is bounded; groundY is
+   *  the surface. */
   readonly width = WORLD_WIDTH;
   readonly height = WORLD_HEIGHT;
   readonly groundY = GROUND_Y;
@@ -56,6 +65,19 @@ export class Chunk {
   private completed = false;
   /** When the contract finished — the reset countdown anchor (null until done). */
   private completedAt: number | null = null;
+
+  constructor(col = 0) {
+    this.id = col;
+    this.x0 = col * SECTION_WIDTH;
+    this.x1 = this.x0 + SECTION_WIDTH;
+    this.centerX = this.x0 + SECTION_WIDTH / 2;
+  }
+
+  /** True if a world-X belongs to this section (wrap-normalized). */
+  contains(x: number): boolean {
+    const wx = wrapX(x, this.width);
+    return wx >= this.x0 && wx < this.x1;
+  }
 
   addOccupant(robot: Robot): void {
     this.robots.set(robot.id, robot);
@@ -121,6 +143,11 @@ export class Chunk {
     return this.robots.get(robotId);
   }
 
+  /** Read-only view of this section's robots (for the registry's handoff upkeep). */
+  occupants(): IterableIterator<Robot> {
+    return this.robots.values();
+  }
+
   get occupantCount(): number {
     return this.robots.size;
   }
@@ -153,8 +180,9 @@ export class Chunk {
       robot.mineUntil = null; // ...or abandons a dig in progress
       this.applyInteract(robot, msg.targetId);
     } else if (msg.t === MessageType.C_INTENT_FLAG) {
-      // Plant or move this player's work-flag, snapped to the surface. X wraps.
-      this.placeFlag(robot.id, wrapX(msg.tx, this.width));
+      // Plant or move this player's work-flag, kept within this section so it stays
+      // owned by the chunk it's in (and rallies this section's crew).
+      this.placeFlag(robot.id, clamp(wrapX(msg.tx, this.width), this.x0, this.x1 - 1));
     }
   }
 
@@ -214,7 +242,8 @@ export class Chunk {
       robot.step(dt, this.width);
       if (robot.isNpc) {
         if (robot.isBuilder) this.driveBuilder(robot, now);
-        else if (!robot.moving) robot.setTarget(Math.random() * this.width, this.wanderY());
+        else if (!robot.moving)
+          robot.setTarget(this.x0 + Math.random() * SECTION_WIDTH, this.wanderY());
       } else if (robot.controlled) {
         this.resolvePending(robot, now);
       }

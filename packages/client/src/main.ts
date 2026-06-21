@@ -1,5 +1,7 @@
 import {
   type AnyMessage,
+  CHUNK_COLS,
+  chunkColOf,
   DEFAULT_INTERP_DELAY_MS,
   DomainEvent,
   EntityKind,
@@ -277,9 +279,11 @@ function updateHud(nowPerf: number): void {
     total += 1;
     if (e.status === PieceStatus.Placed) placed += 1;
   }
+  const me = myRobotId === null ? undefined : rendered.find((e) => e.id === myRobotId);
   hud.set({
     status: conn.status,
     robot: myRobotId ?? '—',
+    zone: me ? `${chunkColOf(me.x) + 1}/${CHUNK_COLS}` : '—',
     rtt_ms: Math.round(clock.rtt),
     interp_ms: interpDelayMs,
     lag_inj: lagMs ? `${lagMs}±${jitterMs}ms` : 'off',

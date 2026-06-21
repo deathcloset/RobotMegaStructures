@@ -21,8 +21,41 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 ## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
 
 Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
-first). Still one wide chunk; the **chunk grid + OSHA handoff** (and a dedicated
-delivery-swarm robot type) are the slices still to come.
+first). The world is now a **ring of sections** (the chunk grid); OSHA caps + the
+queue-when-full checkpoint, a delivery-swarm robot type, and real multi-server
+distribution are the slices still to come.
+
+### Slice 4 — the section grid + interest management 🧩
+
+The "prove the architecture" half. The planet is now a **ring of sections** (the
+chunk grid): each a self-contained worksite with its own slice of the megastructure,
+depots, veins, and crew. A client subscribes only to the section(s) under its
+viewport, so **per-client bandwidth stays flat as the world grows** — the core
+scaling claim (§7). Robots hand off between sections as they cross the boundaries.
+(OSHA caps + the queue-when-full checkpoint *feel* are the next slice; this is the
+grid + interest + membership half — the staged plan Ben picked.)
+
+- **Section grid** (`CHUNK_COLS` × `SECTION_WIDTH`): `WORLD_WIDTH` is now derived
+  from the grid, so more sections = a bigger planet. `ChunkRegistry` grew from "one
+  chunk" into the grid + the routing/interest indirection; each `Chunk` owns a
+  world-X slice but still simulates in world coords with the global wrap.
+- **Interest across sections**: the broadcast snapshots each section once, then each
+  client gathers only the sections overlapping its viewport (`chunksInView`, wrap-
+  aware). Measured: in a 6-section world (~190 entities), a viewport client pulled
+  **~1 KB/s (19 entities)** vs a whole-world client's **~9 KB/s (188)** — an **8.5×**
+  cut, independent of world size.
+- **Cross-section handoff** (`ChunkRegistry.settle`): a robot that walks out of its
+  section is moved to the one that now owns its position — the in-process form of the
+  §4.4 checkpoint handoff, and the exact seam that becomes a *network* handoff when
+  sections live on different servers (see `IDEAS.md` "Distributed hosting").
+- **Per-section worksites**: every section seeds its own contract + crew; the gateway
+  routes each intent to the robot's current section; the HUD shows your zone.
+- **No protocol change** (still v7): entities already ride the wire by world position
+  and the client already renders by AOI, so the grid is almost entirely server-side —
+  the early entity-neutral + AOI hooks paying off.
+- **Proven**: unit (68 tests, +6) — `chunkColOf` routing, `chunksInView` selection,
+  and a robot handed off to the section it walks into. Wire: the 8.5× egress cut
+  above, and a walker crossing a section boundary, tracked continuously.
 
 ### Slice 3 — commandable crews 🚩
 
@@ -123,9 +156,12 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
-- A dedicated **delivery-swarm** robot type (set-and-forget ferrying), and the big
-  structural one: the **chunk grid + OSHA handoff** — grow `ChunkRegistry` from one
-  wide chunk to many (the AOI filter and wrap math are already ready for it).
+- **OSHA caps + the checkpoint feel** — a per-section robot cap (the §4.4 sharding
+  boundary), with queue-when-full backpressure when you try to enter a full section
+  (the section grid + handoff seam this slice built are ready for it).
+- A dedicated **delivery-swarm** robot type (set-and-forget ferrying between sections).
+- Later (infra): real **multi-server distribution** — sections owned by different
+  boxes, coordinated over Redis/Valkey (see `IDEAS.md` "Distributed hosting").
 
 ---
 

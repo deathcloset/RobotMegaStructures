@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { APP_CODENAME, APP_VERSION, ROBOT_SPEED } from '@rms/shared';
+import { APP_CODENAME, APP_VERSION, CHUNK_COLS, ROBOT_SPEED } from '@rms/shared';
 import { Snapshotter } from './broadcast/Snapshotter';
 import { loadConfig } from './config';
 import { log } from './log';
@@ -7,6 +7,7 @@ import { Metrics } from './metrics/Metrics';
 import { handleMetrics } from './metrics/metricsServer';
 import { WsGateway } from './net/WsGateway';
 import { seedContract } from './sim/blueprint';
+import type { Chunk } from './sim/Chunk';
 import { ChunkRegistry } from './sim/ChunkRegistry';
 import { Robot } from './sim/Robot';
 import { SimLoop } from './sim/SimLoop';
@@ -17,8 +18,12 @@ const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
 const chunks = new ChunkRegistry();
 
-seedContract(chunks.primary, repo);
-seedRobots();
+// Every section is its own worksite with its own crew (the chunk grid, § Phase 2).
+let nextNpcId = 0;
+for (const chunk of chunks.all()) {
+  seedContract(chunk, repo);
+  seedRobots(chunk);
+}
 
 const httpServer = createServer((req, res) => {
   if (handleMetrics(req, res, metrics, config)) return;
@@ -61,26 +66,28 @@ httpServer.listen(config.port, config.host, () => {
     seedRobots: config.seedRobots,
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
-    contractPieces: chunks.primary.pieceCount,
+    sections: CHUNK_COLS,
+    piecesPerSection: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,
   });
   loop.start();
 });
 
-/** Seed NPC robots (negative ids) so a lone first player sees a living, working
- *  site: the first `seedBuilders` run the build loop autonomously (the first
- *  `seedMiners` of those prospect the ore veins); the rest just wander as ambiance. */
-function seedRobots(): void {
-  const chunk = chunks.primary;
+/** Seed a section's NPC crew (negative ids, unique planet-wide) so every section is
+ *  a living worksite: the first `seedBuilders` run the build loop autonomously (the
+ *  first `seedMiners` of those prospect the ore veins); the rest wander their
+ *  section as ambiance. */
+function seedRobots(chunk: Chunk): void {
+  const span = chunk.x1 - chunk.x0;
   for (let i = 0; i < config.seedRobots; i++) {
-    // Spread NPCs across the planet, near the surface, so walking around the
-    // world you keep coming across robots at work.
+    // Spread the crew across this section, near the surface.
+    nextNpcId += 1;
     const y = chunk.groundY - 20 - Math.random() * 200;
     const robot = new Robot(
-      -(i + 1),
+      -nextNpcId,
       repo.nextStableId('npc'),
-      Math.random() * chunk.width,
+      chunk.x0 + Math.random() * span,
       y,
       true,
     );
@@ -89,7 +96,7 @@ function seedRobots(): void {
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
       robot.prefersMining = i < config.seedMiners; // some prospect the veins
     } else {
-      robot.setTarget(Math.random() * chunk.width, chunk.groundY - Math.random() * 200);
+      robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
     }
     chunk.addOccupant(robot);
   }

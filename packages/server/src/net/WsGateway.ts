@@ -96,7 +96,9 @@ export class WsGateway {
       case MessageType.C_INTENT_INTERACT:
       case MessageType.C_INTENT_FLAG:
         if (conn.robotId === null) return;
-        this.chunks.primary.applyIntent(conn.robotId, msg);
+        // Apply in whichever section currently holds the robot (it may have crossed
+        // a boundary since it joined).
+        this.chunks.chunkOfRobot(conn.robotId)?.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;
         return;
       default:
@@ -120,9 +122,9 @@ export class WsGateway {
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
     const chunk = this.chunks.primary;
-    // Spawn on the surface by the blueprint so new players land looking at the
-    // work site, with the structure rising in front of them.
-    const spawnX = chunk.width / 2 + (Math.random() * 2 - 1) * 80;
+    // Spawn on the surface by the primary section's worksite so new players land
+    // looking at the structure rising in front of them.
+    const spawnX = chunk.centerX + (Math.random() * 2 - 1) * 80;
     const spawnY = chunk.groundY - 24 - Math.random() * 40;
     const robot = new Robot(
       robotId,
@@ -147,7 +149,7 @@ export class WsGateway {
   private tryResume(conn: Connection, token: string, now: number): boolean {
     const robotId = this.sessions.get(token);
     if (robotId === undefined) return false;
-    const robot = this.chunks.primary.getRobot(robotId);
+    const robot = this.chunks.getRobot(robotId);
     if (!robot) {
       this.sessions.delete(token); // stale: robot expired during the grace window
       return false;
@@ -202,7 +204,7 @@ export class WsGateway {
     // §4.7 grace: don't vanish the robot. Park it (idle, still visible, carried
     // item kept) and schedule removal; a reconnect within the window resumes it.
     if (conn.robotId !== null) {
-      const robot = this.chunks.primary.getRobot(conn.robotId);
+      const robot = this.chunks.getRobot(conn.robotId);
       if (robot && robot.ownerConnectionId === conn.id) {
         robot.ownerConnectionId = null;
         robot.pendingAction = null;
@@ -221,9 +223,9 @@ export class WsGateway {
   /** Grace window elapsed without a reconnect — remove the parked robot for good. */
   private finalizeRemoval(robotId: number): void {
     this.graceTimers.delete(robotId);
-    const robot = this.chunks.primary.getRobot(robotId);
+    const robot = this.chunks.getRobot(robotId);
     if (robot?.parked) {
-      this.chunks.primary.removeOccupant(robotId);
+      this.chunks.removeRobot(robotId);
       this.broadcastEvent(DomainEvent.RobotDisconnected, { robotId });
       log.info('robot grace expired', { robotId });
     }

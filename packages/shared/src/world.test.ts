@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wrapDeltaX, wrappedDistance, wrapX } from './world';
+import { chunkColOf, sectionCenterX, wrapDeltaX, wrappedDistance, wrapX } from './world';
 
 const W = 4096;
 
@@ -29,6 +29,27 @@ describe('wrapDeltaX', () => {
   it('is bounded by half the circumference', () => {
     expect(Math.abs(wrapDeltaX(0, W / 2 + 1, W))).toBeLessThanOrEqual(W / 2);
     expect(wrapDeltaX(0, W / 2, W)).toBe(W / 2);
+  });
+});
+
+describe('chunkColOf', () => {
+  // 4 sections of 1000 → cols 0..3.
+  it('maps a world X to its section column', () => {
+    expect(chunkColOf(0, 1000, 4)).toBe(0);
+    expect(chunkColOf(999, 1000, 4)).toBe(0);
+    expect(chunkColOf(1000, 1000, 4)).toBe(1);
+    expect(chunkColOf(3500, 1000, 4)).toBe(3);
+  });
+  it('wraps and clamps at the edges', () => {
+    expect(chunkColOf(4000, 1000, 4)).toBe(0); // == width → wraps to 0
+    expect(chunkColOf(-1, 1000, 4)).toBe(3); // just left of the seam
+  });
+});
+
+describe('sectionCenterX', () => {
+  it('returns the middle of a section', () => {
+    expect(sectionCenterX(0, 1000)).toBe(500);
+    expect(sectionCenterX(2, 1000)).toBe(2500);
   });
 });
 

@@ -24,12 +24,20 @@ export const DEFAULT_BROADCAST_HZ = 4;
  * The world is a CYLINDER (Phase 2): a wide side-scrolling planet whose X axis
  * WRAPS — walk far enough left or right and you arrive back where you started —
  * with a bounded vertical axis (sky above, surface below) up which the
- * megastructure rises. Phase 0/1 were a single 1024² square; the wrap math is
- * decided once and server-authoritatively in `world.ts`, then mirrored by the
- * camera/renderer so the seam is invisible.
+ * megastructure rises. The circumference is tiled by a ring of equal-width
+ * **sections** (the chunk grid): each is a self-contained worksite owned by one
+ * sim unit, so "more sections = a bigger planet" and sections can later live on
+ * different servers (§4.4/§4.5). Phase 0/1 were a single 1024² square; the wrap
+ * math is decided once and server-authoritatively in `world.ts`.
  */
-/** Planet circumference in world units — the X axis wraps over [0, WORLD_WIDTH). */
-export const WORLD_WIDTH = 4096;
+/** One section (chunk) of the planet, world units wide. */
+export const SECTION_WIDTH = 1024;
+/** How many sections tile the circumference (the chunk grid). Each is its own
+ *  worksite with its own OSHA cap (cap enforcement lands the next slice). */
+export const CHUNK_COLS = 6;
+/** Planet circumference in world units — the X axis wraps over [0, WORLD_WIDTH).
+ *  Derived from the section grid, so growing CHUNK_COLS grows the world. */
+export const WORLD_WIDTH = SECTION_WIDTH * CHUNK_COLS;
 /** Vertical extent in world units (y=0 is the top of the sky). Does not wrap. */
 export const WORLD_HEIGHT = 1024;
 /** The surface line (world Y). Robots live on/above it (clamped to [0, GROUND_Y])
@@ -39,9 +47,6 @@ export const GROUND_Y = 896;
 /** The world's X axis wraps (it's a cylinder). Sent in S_WELCOME so the client
  *  renders the seam seamlessly and the camera loops all the way around. */
 export const WORLD_WRAP_X = true;
-/** The single chunk id. Phase 2 still runs one wide wrapping chunk; growing the
- *  ChunkRegistry to a GRID + the OSHA handoff is the next structural slice. */
-export const CHUNK_ID = 0;
 
 /** Robot movement speed, world units per second. */
 export const ROBOT_SPEED = 80;
@@ -83,5 +88,5 @@ export const DEPOSIT_MAX = 6;
 /** Renewable veins slowly refill between visits (loads per second), so heavy
  *  mining depletes a vein but the planet never runs dry. */
 export const DEPOSIT_REGEN_PER_SEC = 0.15;
-/** How many ore deposits to scatter around the planet surface. */
-export const DEPOSIT_COUNT = 10;
+/** How many ore deposits to scatter on each section's surface. */
+export const DEPOSIT_COUNT = 3;
