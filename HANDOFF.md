@@ -17,8 +17,9 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
   **slice 2**: **surface mining** (ore veins); **slice 3**: **commandable crews**
   (long-press a **work-flag**); **slice 4**: the **section grid + interest management**
   (ring of sections, per-viewport subscription — **8.5×** egress cut — + cross-section
-  handoff); **slice 5**: **OSHA caps + the checkpoint** — each section has a robot cap
-  and you queue at the checkpoint when it's full. Protocol **v8**. See CHANGELOG
+  handoff); **slice 5**: **OSHA caps + the checkpoint** — each section caps the bot
+  swarm (bots queue at full checkpoints; players always pass; bots roam so sections
+  drain). Protocol **v8**. See CHANGELOG
   "Unreleased". Remaining Phase 2 (delivery-swarm type, then multi-server) is below.
 
 ## Run / operate
@@ -90,9 +91,10 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   **delivery-swarm** robot type for set-and-forget far ferrying.
 - ✅ **Chunk grid + OSHA handoff** (slices 4–5, this branch) — the planet is a ring of
   sections; interest is per-viewport (8.5× egress cut measured); robots hand off across
-  boundaries; each section has an OSHA **cap** with queue-when-full at the checkpoint
-  (§4.4). **Next:** real multi-server distribution (IDEAS.md "Distributed hosting" —
-  Ben's vision: sections across small boxes; the `settle` handoff + cap are the seam).
+  boundaries; each section caps the **bot** swarm (bots queue at full checkpoints,
+  players always pass, wanderers roam so sections drain) (§4.4). **Next:** real
+  multi-server distribution (IDEAS.md "Distributed hosting" — Ben's vision: sections
+  across small boxes; the `settle` handoff + cap are the seam).
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
   living/maintenance hosting of finished structures, the megastructures game-set).
 
@@ -122,10 +124,10 @@ through the one `applyIntent` chokepoint — copy that shape.
   becomes the seam where a section is owned by another process/box, coordinated over
   Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).
   Don't build it until there's a second box to host (no consumer yet, §2.5).
-- **Checkpoint polish (small):** NPCs stay in their section, so the cap is only felt by
-  players today — let some builders/swarms cross to exercise it organically; a held
-  player auto-resumes once a slot frees only if they keep a move target across the
-  boundary (re-tap otherwise); a richer "queue position / zone N/M full" HUD would help.
+- **Checkpoint polish (small):** wanderers now roam across sections so bots flow + queue
+  organically, and players are never blocked. Remaining nice-to-haves: a held *bot*
+  could re-path away after waiting a while (avoid pile-ups at a hot checkpoint), and a
+  richer "this section is N/M full" HUD cue would make the cap legible to players.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids

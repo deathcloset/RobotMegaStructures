@@ -9,7 +9,7 @@ import type { Robot } from './Robot';
  * "chunks spread across sim servers" (§4.5). The sim loop, gateway, and broadcast
  * all go through it instead of reaching for a single chunk.
  */
-/** A checkpoint nudge to dispatch: tell `connId` its target section is full. */
+/** A flavour nudge: `connId` just squeezed past a busy section's checkpoint. */
 export interface BlockedNotice {
   connId: number;
   section: number;
@@ -84,16 +84,18 @@ export class ChunkRegistry {
 
   /**
    * The cross-section handoff at the OSHA checkpoint (§4.4). A robot that walked out
-   * of its section is moved to the one that now owns its position — UNLESS that
-   * section is at its cap, in which case the robot is held at the checkpoint (clamped
-   * just inside its current section) and queues; it crosses on a later tick once a
-   * slot frees. Returns the checkpoint nudges to deliver to held players. In one
-   * process this is a Map move; it's the same seam that becomes a network handoff
-   * when sections live on different servers (IDEAS.md "Distributed hosting").
+   * of its section is moved to the one that now owns its position. The cap throttles
+   * the autonomous **bot** swarm: a bot entering a full section is held at the
+   * checkpoint (clamped just inside its current section) and crosses on a later tick
+   * once a slot frees. **Players are never walled** — frustrating a human at an
+   * invisible boundary has no place in a co-op game; a player crossing a full section
+   * passes through and just gets a flavour nudge. Returns those nudges for the
+   * gateway to deliver. In one process this is a Map move; it's the same seam that
+   * becomes a network handoff when sections live on different servers.
    */
   settle(now = 0): BlockedNotice[] {
     const moves: Array<{ from: Chunk; to: Chunk; robot: Robot }> = [];
-    const incoming = new Map<number, number>(); // section id -> moves already approved
+    const incoming = new Map<number, number>(); // section id -> arrivals already approved
     const notices: BlockedNotice[] = [];
     const edge = 2; // hold a hair inside the current section
 
@@ -109,20 +111,23 @@ export class ChunkRegistry {
           continue;
         }
         const approved = incoming.get(to.id) ?? 0;
-        if (to.occupantCount + approved >= to.capacity) {
-          // Full → hold at the checkpoint, clamped back into the current section.
+        const full = to.occupantCount + approved >= to.capacity;
+        if (full && robot.isNpc) {
+          // A bot queues at the checkpoint, held just inside its current section.
           const rightNeighbor = (from.id + 1) % this.chunks.length;
           robot.x = to.id === rightNeighbor ? from.x1 - edge : from.x0 + edge;
           robot.blocked = true;
-          if (robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
-            robot.blockedNotifyAt = now + 1500;
-            notices.push({ connId: robot.ownerConnectionId, section: to.id });
-          }
-        } else {
-          robot.blocked = false;
-          incoming.set(to.id, approved + 1);
-          moves.push({ from, to, robot });
+          continue;
         }
+        // Players always pass; bots pass when there's room. A player squeezing past
+        // a full section gets a throttled flavour nudge (never a block).
+        if (full && robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
+          robot.blockedNotifyAt = now + 1500;
+          notices.push({ connId: robot.ownerConnectionId, section: to.id });
+        }
+        robot.blocked = false;
+        incoming.set(to.id, approved + 1);
+        moves.push({ from, to, robot });
       }
     }
     for (const { from, to, robot } of moves) {

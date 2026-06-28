@@ -16,7 +16,11 @@ import { InMemoryWorldRepo } from './state/repository';
 const config = loadConfig();
 const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
-const chunks = new ChunkRegistry(config.sectionCapacity);
+// Guarantee each section has headroom above its resident bots, so roaming bots can
+// always flow through checkpoints (players pass regardless). Robust even if the env
+// seeds a dense garrison — never let the cap sit at or below the seeded count.
+const sectionCapacity = Math.max(config.sectionCapacity, config.seedRobots + 6);
+const chunks = new ChunkRegistry(sectionCapacity);
 
 // Every section is its own worksite with its own crew (the chunk grid, § Phase 2).
 let nextNpcId = 0;
@@ -67,7 +71,7 @@ httpServer.listen(config.port, config.host, () => {
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
     sections: CHUNK_COLS,
-    sectionCapacity: config.sectionCapacity,
+    sectionCapacity,
     piecesPerSection: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,

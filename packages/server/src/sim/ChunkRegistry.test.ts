@@ -43,32 +43,45 @@ describe('ChunkRegistry — the section grid', () => {
 });
 
 describe('ChunkRegistry — OSHA caps (§4.4)', () => {
-  it('holds a robot at the checkpoint when the next section is at its cap', () => {
+  it('queues a BOT at the checkpoint when the next section is at its cap', () => {
     const reg = new ChunkRegistry(1); // each section holds one robot
-    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true)); // section 1 now full
+    reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true)); // section 1 full
+    const bot = new Robot(-1, 'bot', 1100, 800, true); // an NPC walked to an x in section 1
+    reg.get(0)!.addOccupant(bot);
+
+    const notices = reg.settle(1000);
+
+    expect(reg.get(1)!.getRobot(-1)).toBeUndefined(); // not admitted
+    expect(reg.get(0)!.getRobot(-1)).toBe(bot); // held in its current section
+    expect(bot.blocked).toBe(true);
+    expect(bot.x).toBeLessThan(1024); // clamped back inside section 0
+    expect(notices).toEqual([]); // bots get no nudge
+  });
+
+  it('never walls a PLAYER — they pass a full section (with a flavour nudge)', () => {
+    const reg = new ChunkRegistry(1);
+    reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true)); // section 1 full
     const player = new Robot(1, 'p', 1100, 800, false, 1); // walked to an x in section 1
     reg.get(0)!.addOccupant(player);
 
     const notices = reg.settle(1000);
 
-    expect(reg.get(1)!.getRobot(1)).toBeUndefined(); // not admitted
-    expect(reg.get(0)!.getRobot(1)).toBe(player); // held in its current section
-    expect(player.blocked).toBe(true);
-    expect(player.x).toBeLessThan(1024); // clamped back inside section 0
-    expect(notices).toEqual([{ connId: 1, section: 1 }]); // the owner is nudged
+    expect(reg.get(1)!.getRobot(1)).toBe(player); // crossed despite the cap
+    expect(player.blocked).toBe(false);
+    expect(notices).toEqual([{ connId: 1, section: 1 }]); // just a flavour nudge
   });
 
-  it('admits only the free slots and queues the rest (no overfill)', () => {
+  it('admits only the free slots and queues the rest of the bots (no overfill)', () => {
     const reg = new ChunkRegistry(2); // section holds two
-    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true)); // 1 resident → 1 free slot
+    reg.get(1)!.addOccupant(new Robot(-99, 'resident', 1500, 800, true)); // 1 resident → 1 free
     for (let i = 0; i < 3; i++) {
-      reg.get(0)!.addOccupant(new Robot(i + 1, `p${i}`, 1100, 800, false, i + 1));
+      reg.get(0)!.addOccupant(new Robot(-(i + 1), `bot${i}`, 1100, 800, true));
     }
 
     reg.settle(1000);
 
     expect(reg.get(1)!.occupantCount).toBe(2); // capped: resident + exactly one admitted
-    expect(reg.get(0)!.occupantCount).toBe(2); // the other two stay queued
+    expect(reg.get(0)!.occupantCount).toBe(2); // the other two bots stay queued
   });
 
   it('spawns new players into a section with room, never a full one', () => {
@@ -78,19 +91,19 @@ describe('ChunkRegistry — OSHA caps (§4.4)', () => {
     expect(reg.spawnSection()).toBe(reg.get(1)); // → first section that still has room
   });
 
-  it('lets a queued robot cross once a slot frees', () => {
+  it('lets a queued bot cross once a slot frees', () => {
     const reg = new ChunkRegistry(1);
-    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true));
-    const player = new Robot(1, 'p', 1100, 800, false, 1);
-    reg.get(0)!.addOccupant(player);
+    reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true));
+    const bot = new Robot(-1, 'bot', 1100, 800, true);
+    reg.get(0)!.addOccupant(bot);
     reg.settle(1000);
-    expect(player.blocked).toBe(true);
+    expect(bot.blocked).toBe(true);
 
-    reg.get(1)!.removeOccupant(-1); // a spot opens
-    player.x = 1100; // it steps toward its target again
+    reg.get(1)!.removeOccupant(-2); // a spot opens
+    bot.x = 1100; // it steps toward its target again
     reg.settle(2000);
 
-    expect(reg.get(1)!.getRobot(1)).toBe(player);
-    expect(player.blocked).toBe(false);
+    expect(reg.get(1)!.getRobot(-1)).toBe(bot);
+    expect(bot.blocked).toBe(false);
   });
 });

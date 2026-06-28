@@ -27,24 +27,34 @@ come.
 
 ### Slice 5 — OSHA caps + the checkpoint 🦺
 
-Each section now has an **OSHA cap** (max robots) — the §4.4 sharding boundary made
-playable. Walk toward a full section and you **queue at the checkpoint** until a spot
-opens; new players spawn into a section with room. This is the load limit that lets a
-small server host a bounded section (and, later, the handoff point between servers).
+Each section has an **OSHA cap** that throttles the autonomous **bot** swarm — the
+§4.4 sharding boundary. When a section is full, arriving bots **queue at the
+checkpoint** until a slot frees. **Players are never walled** — frustrating a human at
+an invisible boundary has no place in a co-op game — so you always pass, with a brief
+"🦺 busy section" flavour nudge if it's packed.
 
-- **Per-section cap** (`SECTION_CAPACITY`, default 12; keep it above `SEED_ROBOTS`).
-  The cross-section handoff (`ChunkRegistry.settle`) refuses to move a robot into a
-  section at cap — it's held just inside its current section and crosses on a later
-  tick once a slot frees (queue-when-full backpressure). Admissions are counted, so a
-  burst can't overfill; spawns pick a section with room.
-- **Checkpoint feedback**: a held player gets a throttled `SectionFull` event (sent to
-  that one connection) → a friendly "🦺 Section full — waiting at the checkpoint"
-  banner. Protocol → **8** (the new event).
-- **Proven**: unit (72 tests, +4) — a robot held at a full section's checkpoint (owner
-  nudged), no overfill under a burst, a queued robot crossing once a slot frees, and
-  spawn avoiding a full section. Wire: 18 bots crowding one section settled to
-  **[8,8,8,3,2,2]** with `SECTION_CAPACITY=8` — max occupancy 8 (the cap held), 66
-  checkpoint nudges sent.
+- **Per-section cap** (`SECTION_CAPACITY`). The handoff (`ChunkRegistry.settle`) holds a
+  *bot* at a full section's checkpoint (clamped just inside its current section) and
+  lets it cross once a slot frees; admissions are counted so a burst can't overfill.
+  Players pass regardless; new players spawn into a section with room.
+- **Bots flow** — wanderer NPCs now roam the *whole planet* (not just their own
+  section), so there's real traffic through the checkpoints and the caps come alive.
+  The seeded garrison can never saturate a section: effective capacity is held a margin
+  above the per-section seed, so roaming bots always have room (no gridlock).
+- **Feedback**: a player squeezing past a full section gets a throttled `SectionFull`
+  event → a "🦺 Busy section — squeezing past the checkpoint" toast (flavour, never a
+  block). Protocol → **8**.
+- **Proven**: unit (73 tests, +5) — a bot queued at a full checkpoint, a player passing
+  one (with the flavour nudge), no overfill under a burst, a queued bot crossing once a
+  slot frees, spawn avoiding a full section. Wire: under the dense config that had
+  *walled* players (`SEED_ROBOTS=12, SECTION_CAPACITY=12`), a player now crosses freely,
+  bots roam between sections (counts vary, e.g. `[13,15,9,14,13,10]`), and no section
+  gridlocks (effective cap 18 keeps headroom).
+
+> Caught in playtest: the first cut **hard-blocked players** at full sections, and
+> since seeded bots never left their section, a section seeded to its cap became a
+> permanent wall — you'd sit at an invisible boundary forever. Fixed here: players
+> always pass, bots roam so sections drain, and the cap can never sit at/below the seed.
 
 ### Slice 4 — the section grid + interest management 🧩
 

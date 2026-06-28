@@ -250,8 +250,9 @@ export class Chunk {
       robot.step(dt, this.width);
       if (robot.isNpc) {
         if (robot.isBuilder) this.driveBuilder(robot, now);
-        else if (!robot.moving)
-          robot.setTarget(this.x0 + Math.random() * SECTION_WIDTH, this.wanderY());
+        // Wanderers roam the WHOLE planet (across sections), so bots flow through
+        // checkpoints and queue at busy ones — the section caps come alive (§4.4).
+        else if (!robot.moving) robot.setTarget(Math.random() * this.width, this.wanderY());
       } else if (robot.controlled) {
         this.resolvePending(robot, now);
       }
