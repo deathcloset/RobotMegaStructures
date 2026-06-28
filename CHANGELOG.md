@@ -21,9 +21,30 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 ## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
 
 Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
-first). The world is now a **ring of sections** (the chunk grid); OSHA caps + the
-queue-when-full checkpoint, a delivery-swarm robot type, and real multi-server
-distribution are the slices still to come.
+first). The world is a **ring of sections** with per-section **OSHA caps**; a
+delivery-swarm robot type and real multi-server distribution are the slices still to
+come.
+
+### Slice 5 — OSHA caps + the checkpoint 🦺
+
+Each section now has an **OSHA cap** (max robots) — the §4.4 sharding boundary made
+playable. Walk toward a full section and you **queue at the checkpoint** until a spot
+opens; new players spawn into a section with room. This is the load limit that lets a
+small server host a bounded section (and, later, the handoff point between servers).
+
+- **Per-section cap** (`SECTION_CAPACITY`, default 12; keep it above `SEED_ROBOTS`).
+  The cross-section handoff (`ChunkRegistry.settle`) refuses to move a robot into a
+  section at cap — it's held just inside its current section and crosses on a later
+  tick once a slot frees (queue-when-full backpressure). Admissions are counted, so a
+  burst can't overfill; spawns pick a section with room.
+- **Checkpoint feedback**: a held player gets a throttled `SectionFull` event (sent to
+  that one connection) → a friendly "🦺 Section full — waiting at the checkpoint"
+  banner. Protocol → **8** (the new event).
+- **Proven**: unit (72 tests, +4) — a robot held at a full section's checkpoint (owner
+  nudged), no overfill under a burst, a queued robot crossing once a slot frees, and
+  spawn avoiding a full section. Wire: 18 bots crowding one section settled to
+  **[8,8,8,3,2,2]** with `SECTION_CAPACITY=8` — max occupancy 8 (the cap held), 66
+  checkpoint nudges sent.
 
 ### Slice 4 — the section grid + interest management 🧩
 
@@ -156,12 +177,10 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
-- **OSHA caps + the checkpoint feel** — a per-section robot cap (the §4.4 sharding
-  boundary), with queue-when-full backpressure when you try to enter a full section
-  (the section grid + handoff seam this slice built are ready for it).
 - A dedicated **delivery-swarm** robot type (set-and-forget ferrying between sections).
 - Later (infra): real **multi-server distribution** — sections owned by different
-  boxes, coordinated over Redis/Valkey (see `IDEAS.md` "Distributed hosting").
+  boxes, coordinated over Redis/Valkey; the `settle` handoff + `SECTION_CAPACITY` cap
+  built here are the seam for it (see `IDEAS.md` "Distributed hosting").
 
 ---
 

@@ -17,8 +17,10 @@ export enum DomainEvent {
   // Two-robot weld (Phase 1, §10)
   PieceReserved = 14,
   PieceReleased = 15,
-  // Reserved (slice 2 — two-robot weld, §10): PieceReserved,
-  // PieceReservationExpired, PieceProgressed ...
+  // Chunks / checkpoints (Phase 2, §4.4)
+  /** Sent to a player held at a section checkpoint because the section is at its
+   *  OSHA cap — the queue-when-full backpressure. */
+  SectionFull = 16,
 }
 
 /** Payload of DomainEvent.PiecePlaced — carries live contract progress so a

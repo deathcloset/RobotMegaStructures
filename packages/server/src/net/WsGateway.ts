@@ -121,9 +121,9 @@ export class WsGateway {
     // Fresh spawn.
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
-    const chunk = this.chunks.primary;
-    // Spawn on the surface by the primary section's worksite so new players land
-    // looking at the structure rising in front of them.
+    // Spawn into a section with room under the OSHA cap, by its worksite, so new
+    // players land looking at a structure rising in front of them.
+    const chunk = this.chunks.spawnSection();
     const spawnX = chunk.centerX + (Math.random() * 2 - 1) * 80;
     const spawnY = chunk.groundY - 24 - Math.random() * 40;
     const robot = new Robot(
@@ -185,7 +185,7 @@ export class WsGateway {
         yourRobotId: robotId,
         tickHz: this.config.tickHz,
         broadcastHz: this.config.broadcastHz,
-        chunkId: chunk.id,
+        chunkId: this.chunks.chunkOfRobot(robotId)?.id ?? chunk.id,
         worldBounds: [0, 0, chunk.width, chunk.height],
         groundY: chunk.groundY,
         wrapX: WORLD_WRAP_X,
@@ -250,6 +250,12 @@ export class WsGateway {
     for (const conn of this.connections.values()) {
       if (conn.helloOk) conn.send(msg, now);
     }
+  }
+
+  /** Send a domain event to one connection (e.g. a personal checkpoint nudge). */
+  sendEventTo(connId: number, name: DomainEvent, payload: unknown): void {
+    const conn = this.connections.get(connId);
+    if (conn?.helloOk) conn.send({ t: MessageType.S_EVENT, name, payload }, Date.now());
   }
 
   /** Heartbeat: terminate sockets that didn't answer the previous ping. */

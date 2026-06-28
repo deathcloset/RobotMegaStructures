@@ -41,6 +41,11 @@ export class Robot {
   /** When the current dig of an ore vein finishes (§ Phase 2 mining); null when
    *  not mining. The robot holds at the vein until then. */
   mineUntil: number | null = null;
+  /** Held at a section checkpoint because the next section is at its OSHA cap
+   *  (§4.4). Transient, set by the registry's handoff each tick. */
+  blocked = false;
+  /** Throttle for the "section full" nudge to the owning player while blocked. */
+  blockedNotifyAt = 0;
   /** Movement speed (world units/sec). Builders run a little slower than players. */
   speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot

@@ -54,6 +54,8 @@ export class Chunk {
   readonly width = WORLD_WIDTH;
   readonly height = WORLD_HEIGHT;
   readonly groundY = GROUND_Y;
+  /** OSHA cap: max robots in this section before the checkpoint queues (§4.4). */
+  readonly capacity: number;
   private readonly robots = new Map<number, Robot>();
   private readonly pieces = new Map<number, Piece>();
   private readonly resources = new Map<number, Resource>();
@@ -66,11 +68,17 @@ export class Chunk {
   /** When the contract finished — the reset countdown anchor (null until done). */
   private completedAt: number | null = null;
 
-  constructor(col = 0) {
+  constructor(col = 0, capacity = Number.POSITIVE_INFINITY) {
     this.id = col;
     this.x0 = col * SECTION_WIDTH;
     this.x1 = this.x0 + SECTION_WIDTH;
     this.centerX = this.x0 + SECTION_WIDTH / 2;
+    this.capacity = capacity;
+  }
+
+  /** At or above the OSHA cap — the checkpoint queues new arrivals (§4.4). */
+  get isFull(): boolean {
+    return this.robots.size >= this.capacity;
   }
 
   /** True if a world-X belongs to this section (wrap-normalized). */

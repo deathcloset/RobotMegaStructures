@@ -16,7 +16,7 @@ import { InMemoryWorldRepo } from './state/repository';
 const config = loadConfig();
 const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
-const chunks = new ChunkRegistry();
+const chunks = new ChunkRegistry(config.sectionCapacity);
 
 // Every section is its own worksite with its own crew (the chunk grid, § Phase 2).
 let nextNpcId = 0;
@@ -67,6 +67,7 @@ httpServer.listen(config.port, config.host, () => {
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
     sections: CHUNK_COLS,
+    sectionCapacity: config.sectionCapacity,
     piecesPerSection: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,

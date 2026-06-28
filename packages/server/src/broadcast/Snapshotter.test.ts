@@ -18,6 +18,7 @@ function deltaConfig(): ServerConfig {
     seedRobots: 0,
     seedBuilders: 0,
     seedMiners: 0,
+    sectionCapacity: Number.POSITIVE_INFINITY,
     metricsLogMs: 5000,
     gracePeriodMs: 120_000,
   };

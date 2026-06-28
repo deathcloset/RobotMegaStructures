@@ -9,8 +9,9 @@ for what shipped and [`HANDOFF.md`](./HANDOFF.md) to pick up development.
 **Phase 2 is underway** on a branch 🪐: the world is now a wide side-scrolling
 planet whose horizon wraps, divided into a 🧩 grid of sections (each its own
 worksite, so your bandwidth stays tiny no matter how big the planet gets), with a
-real surface and sky, ⛏️ ore veins to mine, and 🚩 work-flags to rally your builder
-crew (see CHANGELOG "Unreleased").
+real surface and sky, ⛏️ ore veins to mine, 🚩 work-flags to rally your builder
+crew, and a 🦺 OSHA cap per section (queue at the checkpoint when one's full) — see
+CHANGELOG "Unreleased".
 
 **What works today (Phase 1):** a real build loop on a live authoritative server —
 robots haul material from depots to a ghost blueprint and place it; a top row of

@@ -15,11 +15,11 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
 - **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
   Phase 2 so far — **slice 1**: a wide **side-scrolling planet whose X axis wraps**;
   **slice 2**: **surface mining** (ore veins); **slice 3**: **commandable crews**
-  (long-press a **work-flag** to rally the crew); **slice 4**: the **section grid +
-  interest management** — the planet is a ring of self-contained sections, a client
-  only subscribes to the section(s) under its viewport (measured **8.5×** egress cut),
-  and robots hand off across boundaries. Protocol **v7**. See CHANGELOG "Unreleased".
-  Remaining Phase 2 (OSHA caps + the checkpoint feel, a delivery-swarm type) is below.
+  (long-press a **work-flag**); **slice 4**: the **section grid + interest management**
+  (ring of sections, per-viewport subscription — **8.5×** egress cut — + cross-section
+  handoff); **slice 5**: **OSHA caps + the checkpoint** — each section has a robot cap
+  and you queue at the checkpoint when it's full. Protocol **v8**. See CHANGELOG
+  "Unreleased". Remaining Phase 2 (delivery-swarm type, then multi-server) is below.
 
 ## Run / operate
 
@@ -88,11 +88,11 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
   mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
   **delivery-swarm** robot type for set-and-forget far ferrying.
-- ◑ **Chunk grid + OSHA handoff** (slice 4 did the AOI/grid half, this branch) — the
-  planet is a ring of sections, interest is per-viewport (8.5× egress cut measured),
-  robots hand off across boundaries. **Next half:** the OSHA **cap** per section + the
-  queue-when-full **checkpoint** feel (§4.4). Then real multi-server distribution
-  (IDEAS.md "Distributed hosting" — Ben's vision: sections across small boxes).
+- ✅ **Chunk grid + OSHA handoff** (slices 4–5, this branch) — the planet is a ring of
+  sections; interest is per-viewport (8.5× egress cut measured); robots hand off across
+  boundaries; each section has an OSHA **cap** with queue-when-full at the checkpoint
+  (§4.4). **Next:** real multi-server distribution (IDEAS.md "Distributed hosting" —
+  Ben's vision: sections across small boxes; the `settle` handoff + cap are the seam).
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
   living/maintenance hosting of finished structures, the megastructures game-set).
 
@@ -105,24 +105,27 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   viewport," and **egress per client stays flat as the world grows** (keep watching
   `bytes_per_player_per_tick`). The world geometry rides `S_WELCOME` (v5).
 
-**What slice 4 built (the grid is now real).** The world is a ring of `CHUNK_COLS`
-sections; `ChunkRegistry` is the grid + the routing/interest/handoff indirection
-(`chunkAt`, `chunksInView`, `settle`). `SimLoop` snapshots each section once and each
-client gathers only the sections overlapping its viewport. Each `Chunk` owns a
-world-X slice (`x0..x1`, `centerX`) but still simulates in world coords with the
-global wrap, so it stays an isolated message-in/state-out unit (the Elixir/multi-box
-port hedge, §5.4). Mining (slice 2) is the worked example for adding new
-`EntityKind`s through the one `applyIntent` chokepoint — copy that shape.
+**What slices 4–5 built (the grid + checkpoint are real).** The world is a ring of
+`CHUNK_COLS` sections; `ChunkRegistry` is the grid + the routing/interest/handoff
+indirection (`chunkAt`, `chunksInView`, `settle`, `spawnSection`). `SimLoop` snapshots
+each section once and each client gathers only the sections overlapping its viewport.
+Each `Chunk` owns a world-X slice (`x0..x1`, `centerX`) + a `capacity`/`isFull`, but
+still simulates in world coords with the global wrap, so it stays an isolated
+message-in/state-out unit (the Elixir/multi-box port hedge, §5.4). `settle(now)`
+enforces the OSHA cap (holds robots at full checkpoints, counts admissions so a burst
+can't overfill) and returns the per-player nudges the gateway delivers as
+`SectionFull`. Mining (slice 2) is the worked example for adding new `EntityKind`s
+through the one `applyIntent` chokepoint — copy that shape.
 
-**Next: the OSHA half + then distribution.**
-- **Cap + checkpoint:** give `Chunk` a `capacity`; in `ChunkRegistry.settle`, refuse
-  to move a robot into a section already at cap (hold it at the boundary), and add the
-  queue-when-full backpressure + a client-side "zone full" cue. That's the §4.4
-  sharding boundary made playable.
-- **Multi-server:** the same `settle` handoff becomes a network handoff; `ChunkRegistry`
-  becomes the seam where a chunk is owned by another process/box, coordinated over
+**Next: distribution (and rough edges to polish).**
+- **Multi-server:** the same `settle` handoff becomes a *network* handoff; `ChunkRegistry`
+  becomes the seam where a section is owned by another process/box, coordinated over
   Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).
   Don't build it until there's a second box to host (no consumer yet, §2.5).
+- **Checkpoint polish (small):** NPCs stay in their section, so the cap is only felt by
+  players today — let some builders/swarms cross to exercise it organically; a held
+  player auto-resumes once a slot frees only if they keep a move target across the
+  boundary (re-tap otherwise); a richer "queue position / zone N/M full" HUD would help.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids

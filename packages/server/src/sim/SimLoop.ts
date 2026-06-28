@@ -1,4 +1,4 @@
-import { type EntitySnapshot, encodeMessage } from '@rms/shared';
+import { DomainEvent, type EntitySnapshot, encodeMessage } from '@rms/shared';
 import type { Snapshotter } from '../broadcast/Snapshotter';
 import type { ServerConfig } from '../config';
 import type { Metrics } from '../metrics/Metrics';
@@ -60,8 +60,11 @@ export class SimLoop {
     for (const chunk of this.chunks.all()) chunk.step(dt, start);
     this.tick += 1;
 
-    // 1b. hand off robots that crossed a section boundary to the owning section
-    this.chunks.settle();
+    // 1b. hand off robots across section boundaries (OSHA checkpoint); nudge any
+    //     player held at a full section's checkpoint.
+    for (const n of this.chunks.settle(start)) {
+      this.gateway.sendEventTo(n.connId, DomainEvent.SectionFull, { section: n.section });
+    }
 
     // 2. drain + broadcast domain events (the §6 first-class stream)
     for (const chunk of this.chunks.all()) {

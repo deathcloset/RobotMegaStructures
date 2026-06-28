@@ -129,6 +129,9 @@ function onEvent(name: DomainEvent, _payload: unknown): void {
     showBanner('Contract complete! 🎉  Next blueprint incoming…', 6000);
   } else if (name === DomainEvent.ContractStarted) {
     showBanner('New contract — build! 🏗️', 4000);
+  } else if (name === DomainEvent.SectionFull) {
+    // Held at the checkpoint until a spot opens (re-sent while blocked, ~every 1.5s).
+    showBanner('🦺 Section full — waiting at the checkpoint…', 2500);
   }
 }
 

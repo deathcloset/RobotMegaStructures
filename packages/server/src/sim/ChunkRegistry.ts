@@ -9,20 +9,35 @@ import type { Robot } from './Robot';
  * "chunks spread across sim servers" (§4.5). The sim loop, gateway, and broadcast
  * all go through it instead of reaching for a single chunk.
  */
+/** A checkpoint nudge to dispatch: tell `connId` its target section is full. */
+export interface BlockedNotice {
+  connId: number;
+  section: number;
+}
+
 export class ChunkRegistry {
   private readonly chunks: Chunk[] = [];
 
-  constructor() {
-    for (let c = 0; c < CHUNK_COLS; c++) this.chunks.push(new Chunk(c));
+  constructor(capacity = Number.POSITIVE_INFINITY) {
+    for (let c = 0; c < CHUNK_COLS; c++) this.chunks.push(new Chunk(c, capacity));
   }
 
   get(id: number): Chunk | undefined {
     return this.chunks[id];
   }
 
-  /** The section new players spawn into (and a convenient default). */
+  /** A convenient default section (section 0). */
   get primary(): Chunk {
     return this.chunks[0]!;
+  }
+
+  /** Where a new player spawns: the primary section if it has room under the OSHA
+   *  cap, else the first section that does (so a join never overfills a section).
+   *  Falls back to the primary if every section is full. */
+  spawnSection(): Chunk {
+    if (!this.primary.isFull) return this.primary;
+    for (const c of this.chunks) if (!c.isFull) return c;
+    return this.primary;
   }
 
   all(): IterableIterator<Chunk> {
@@ -68,19 +83,45 @@ export class ChunkRegistry {
   }
 
   /**
-   * Move any robot that has walked out of its section into the one that now owns
-   * its position — the in-process form of the cross-section handoff (§4.4). The
-   * OSHA cap (refusing entry to a full section) and the checkpoint feel are the
-   * next slice; this is just membership-by-position so interest management stays
-   * correct as robots roam the planet.
+   * The cross-section handoff at the OSHA checkpoint (§4.4). A robot that walked out
+   * of its section is moved to the one that now owns its position — UNLESS that
+   * section is at its cap, in which case the robot is held at the checkpoint (clamped
+   * just inside its current section) and queues; it crosses on a later tick once a
+   * slot frees. Returns the checkpoint nudges to deliver to held players. In one
+   * process this is a Map move; it's the same seam that becomes a network handoff
+   * when sections live on different servers (IDEAS.md "Distributed hosting").
    */
-  settle(): void {
+  settle(now = 0): BlockedNotice[] {
     const moves: Array<{ from: Chunk; to: Chunk; robot: Robot }> = [];
+    const incoming = new Map<number, number>(); // section id -> moves already approved
+    const notices: BlockedNotice[] = [];
+    const edge = 2; // hold a hair inside the current section
+
     for (const from of this.chunks) {
       for (const robot of from.occupants()) {
-        if (!from.contains(robot.x)) {
-          const to = this.chunkAt(robot.x);
-          if (to !== from) moves.push({ from, to, robot });
+        if (from.contains(robot.x)) {
+          robot.blocked = false;
+          continue;
+        }
+        const to = this.chunkAt(robot.x);
+        if (to === from) {
+          robot.blocked = false;
+          continue;
+        }
+        const approved = incoming.get(to.id) ?? 0;
+        if (to.occupantCount + approved >= to.capacity) {
+          // Full → hold at the checkpoint, clamped back into the current section.
+          const rightNeighbor = (from.id + 1) % this.chunks.length;
+          robot.x = to.id === rightNeighbor ? from.x1 - edge : from.x0 + edge;
+          robot.blocked = true;
+          if (robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
+            robot.blockedNotifyAt = now + 1500;
+            notices.push({ connId: robot.ownerConnectionId, section: to.id });
+          }
+        } else {
+          robot.blocked = false;
+          incoming.set(to.id, approved + 1);
+          moves.push({ from, to, robot });
         }
       }
     }
@@ -88,5 +129,6 @@ export class ChunkRegistry {
       from.removeOccupant(robot.id);
       to.addOccupant(robot);
     }
+    return notices;
   }
 }

@@ -41,3 +41,56 @@ describe('ChunkRegistry — the section grid', () => {
     expect(reg.chunkOfRobot(1)).toBe(reg.get(1));
   });
 });
+
+describe('ChunkRegistry — OSHA caps (§4.4)', () => {
+  it('holds a robot at the checkpoint when the next section is at its cap', () => {
+    const reg = new ChunkRegistry(1); // each section holds one robot
+    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true)); // section 1 now full
+    const player = new Robot(1, 'p', 1100, 800, false, 1); // walked to an x in section 1
+    reg.get(0)!.addOccupant(player);
+
+    const notices = reg.settle(1000);
+
+    expect(reg.get(1)!.getRobot(1)).toBeUndefined(); // not admitted
+    expect(reg.get(0)!.getRobot(1)).toBe(player); // held in its current section
+    expect(player.blocked).toBe(true);
+    expect(player.x).toBeLessThan(1024); // clamped back inside section 0
+    expect(notices).toEqual([{ connId: 1, section: 1 }]); // the owner is nudged
+  });
+
+  it('admits only the free slots and queues the rest (no overfill)', () => {
+    const reg = new ChunkRegistry(2); // section holds two
+    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true)); // 1 resident → 1 free slot
+    for (let i = 0; i < 3; i++) {
+      reg.get(0)!.addOccupant(new Robot(i + 1, `p${i}`, 1100, 800, false, i + 1));
+    }
+
+    reg.settle(1000);
+
+    expect(reg.get(1)!.occupantCount).toBe(2); // capped: resident + exactly one admitted
+    expect(reg.get(0)!.occupantCount).toBe(2); // the other two stay queued
+  });
+
+  it('spawns new players into a section with room, never a full one', () => {
+    const reg = new ChunkRegistry(1);
+    expect(reg.spawnSection()).toBe(reg.get(0)); // primary has room
+    reg.get(0)!.addOccupant(new Robot(-1, 'npc', 100, 800, true)); // primary now full
+    expect(reg.spawnSection()).toBe(reg.get(1)); // → first section that still has room
+  });
+
+  it('lets a queued robot cross once a slot frees', () => {
+    const reg = new ChunkRegistry(1);
+    reg.get(1)!.addOccupant(new Robot(-1, 'npc', 1500, 800, true));
+    const player = new Robot(1, 'p', 1100, 800, false, 1);
+    reg.get(0)!.addOccupant(player);
+    reg.settle(1000);
+    expect(player.blocked).toBe(true);
+
+    reg.get(1)!.removeOccupant(-1); // a spot opens
+    player.x = 1100; // it steps toward its target again
+    reg.settle(2000);
+
+    expect(reg.get(1)!.getRobot(1)).toBe(player);
+    expect(player.blocked).toBe(false);
+  });
+});
