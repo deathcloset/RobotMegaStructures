@@ -18,9 +18,13 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
   (long-press a **work-flag**); **slice 4**: the **section grid + interest management**
   (ring of sections, per-viewport subscription — **8.5×** egress cut — + cross-section
   handoff); **slice 5**: **OSHA caps + the checkpoint** — each section caps the bot
-  swarm; players always pass, and **roaming work crews** (drawn to a rotating hot
-  section) make checkpoints visibly fill and queue. Protocol **v8**. See CHANGELOG
-  "Unreleased". Remaining Phase 2 (delivery-swarm type, then multi-server) is below.
+  swarm, and **roaming work crews** (drawn to a rotating hot section) make checkpoints
+  visibly fill and queue; **slice 6**: **numbered zones + varied caps** — each zone
+  floats a `ZONE n · count/cap` label (reddening to FULL), caps vary across the ring
+  (e.g. 12/5/16/8/4/14) with crews scaled to each cap, and **players now queue briefly**
+  at a full zone (held at the checkpoint, force-admitted after a bounded wait — felt but
+  never walled). Protocol **v9**. See CHANGELOG "Unreleased". Remaining Phase 2
+  (**nested zones**, delivery-swarm type, then multi-server) is below.
 
 ## Run / operate
 
@@ -89,12 +93,16 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
   mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
   **delivery-swarm** robot type for set-and-forget far ferrying.
-- ✅ **Chunk grid + OSHA handoff** (slices 4–5, this branch) — the planet is a ring of
-  sections; interest is per-viewport (8.5× egress cut measured); robots hand off across
-  boundaries; each section caps the **bot** swarm and **roaming work crews** (drawn to a
-  rotating hot section) make checkpoints visibly queue, while players always pass (§4.4).
-  **Next:** real multi-server distribution (IDEAS.md "Distributed hosting" — Ben's
-  vision: sections across small boxes; the `settle` handoff + cap are the seam).
+- ✅ **Chunk grid + OSHA handoff** (slices 4–6, this branch) — the planet is a ring of
+  **numbered zones**; interest is per-viewport (8.5× egress cut measured); robots hand
+  off across boundaries; **caps vary** per zone (some tight, some roomy), each zone shows
+  a live `count/cap` label, **roaming work crews** (drawn to a rotating hot section) make
+  checkpoints visibly queue, and **players queue briefly** at a full zone but are
+  force-admitted (felt, never walled) (§4.4).
+  **Next:** **nested zones** (an interior worksite with its own cap that traversers walk
+  around — geometry only; the cap/label/queue model is built), then real multi-server
+  distribution (IDEAS.md "Distributed hosting" — Ben's vision: sections across small
+  boxes; the `settle` handoff + cap are the seam).
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
   living/maintenance hosting of finished structures, the megastructures game-set).
 
@@ -119,17 +127,29 @@ can't overfill) and returns the per-player nudges the gateway delivers as
 `SectionFull`. Mining (slice 2) is the worked example for adding new `EntityKind`s
 through the one `applyIntent` chokepoint — copy that shape.
 
-**Next: distribution (and rough edges to polish).**
+**Next: nested zones, then distribution (and rough edges to polish).**
+- **Nested zones (the prep is done, slice 6):** mechanically a nested zone is *just
+  another zone with a cap* — the per-section cap, the `S_SECTIONS` label, and the bounded
+  queue all already apply. What's left is **geometry**: model an interior region (a part
+  *inside* other parts) that a traverser can **walk around** — passing through is opt-in
+  — while it still **queues** anyone who wants in. The cleanest seam is a sub-section that
+  doesn't tile the X axis (it sits *within* a parent section's slice) but still carries a
+  `capacity` + occupancy and shows up in `sectionStats()`; routing into it is an explicit
+  enter, not the X-owns-position handoff `settle` uses for the ring. Don't widen the wire
+  until the geometry's decided — labels already ride `S_SECTIONS`.
 - **Multi-server:** the same `settle` handoff becomes a *network* handoff; `ChunkRegistry`
   becomes the seam where a section is owned by another process/box, coordinated over
   Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).
   Don't build it until there's a second box to host (no consumer yet, §2.5).
-- **Checkpoint dynamics (tunables):** wanderers roam + builder crews migrate (drawn to
-  a clock-derived rotating hot section), so checkpoints fill and queue in waves; players
-  always pass. Knobs live in `Chunk.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`) and
-  the cap floor in `index.ts` (`seedRobots + 3`); watch the `queued` gauge in the
-  metrics log. Nice-to-haves: a richer "this section is N/M full" HUD cue, and a held
-  bot re-pathing after a long wait.
+- **Checkpoint dynamics (tunables):** wanderers roam + builder crews migrate (drawn to a
+  clock-derived rotating hot section), so checkpoints fill and queue in waves; **players
+  queue briefly then are force-admitted** (`MAX_PLAYER_WAIT_MS` in `ChunkRegistry.ts`),
+  so a tight zone is felt but never walls a human. Caps **vary per zone** (`CAP_MULT` +
+  `MIN_SECTION_CAP` in `index.ts`, anchored to `SECTION_CAPACITY`) and each section's crew
+  scales to its cap (`pop = capacity − 3`). Other knobs: `Chunk.ts` (`RELOCATE_*`,
+  `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued` gauge in the metrics log. The live
+  "N/M full" cue shipped as the zone labels (slice 6); a held bot re-pathing after a long
+  wait is still a nice-to-have.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids

@@ -21,9 +21,45 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 ## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
 
 Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
-first). The world is a **ring of sections** with per-section **OSHA caps**; a
-delivery-swarm robot type and real multi-server distribution are the slices still to
-come.
+first). The world is a **ring of numbered zones**, each with its own **OSHA cap**
+(some tight, some roomy) shown on a floating label; **nested zones**, a delivery-swarm
+robot type, and real multi-server distribution are the slices still to come.
+
+### Slice 6 — numbered zones + varied caps 🪧
+
+The sections become **places you can read**. Each zone floats its **number and live
+`count/cap`** above the structure (reddening to **FULL** when packed), and the ring is
+now a **mix of tight and roomy** zones — some are real bottlenecks you queue through,
+others have room to spare — so crossing the planet means reading the crowd and
+sometimes waiting your turn.
+
+- **Varied caps + populations** (`CAP_MULT` in `index.ts`, anchored to
+  `SECTION_CAPACITY`): the six zones cap at e.g. **12/5/16/8/4/14**, and each section's
+  seeded crew **scales to its own cap** (kept a margin below it), so tight zones stay
+  sparse and roomy ones bustle — the planet reads as varied, not uniform.
+- **Zone labels** (`S_SECTIONS`): the server sends each section's cap + live occupancy
+  — global and tiny (a handful of sections, encoded once for everyone), so the client
+  can label zones it can't even see. The client floats a counter-scaled `ZONE n` +
+  `count/cap` label above each section, reddening to **FULL**. Protocol → **9**.
+- **Players now queue (briefly) too**: a player crossing into a full zone is **held at
+  the checkpoint** — the queuing is *felt* — but **force-admitted after a bounded wait**
+  (`MAX_PLAYER_WAIT_MS`, 3 s) so a tight zone can never wall a human. (Slice 5 let
+  players pass instantly — right for "never walled," but it made a tight zone invisible.
+  This keeps both: felt, never frustrating.) The nudge is now "🦺 Section full — waiting
+  at the checkpoint…".
+- **Prepping nested zones** (no new geometry yet, per Ben's steer): a "nested" zone — a
+  worksite *inside* other parts of the structure with its own small cap — is,
+  mechanically, **just another zone with a cap**. The per-section cap model + the labels
+  + the bounded queue already cover it; what's left for that slice is *geometry* — an
+  interior region a traverser can **walk around** (passing through is opt-in) while it
+  still **queues** anyone who wants in. Captured now so the next slice is layout, not
+  plumbing.
+- **Proven**: unit (78 tests, +2) — per-section caps reported as zone stats, and a
+  player queued-then-force-admitted at a full zone (never walled). Wire (dense config
+  that previously *walled* players): boots `sectionCaps: 12/5/16/8/4/14`; zone labels
+  stream live (`Z1 11/12 · Z2 5/5 FULL · Z3 8/16 …`); a player traversed three zones
+  incl. a full one without getting stuck, and the `queued` gauge climbed as roaming
+  crews bunched at the tight checkpoints.
 
 ### Slice 5 — OSHA caps + the checkpoint 🦺
 
@@ -191,6 +227,9 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
+- **Nested zones** — an interior worksite (a part *inside* other parts) with its own
+  small cap that traversers walk around but can queue into. The cap/label/queue model is
+  built (slice 6); this slice is the geometry.
 - A dedicated **delivery-swarm** robot type (set-and-forget ferrying between sections).
 - Later (infra): real **multi-server distribution** — sections owned by different
   boxes, coordinated over Redis/Valkey; the `settle` handoff + `SECTION_CAPACITY` cap

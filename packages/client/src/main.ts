@@ -121,6 +121,9 @@ function onMessage(msg: AnyMessage): void {
     case MessageType.S_EVENT:
       onEvent(msg.name, msg.payload);
       break;
+    case MessageType.S_SECTIONS:
+      stage.setSections(msg.sections);
+      break;
   }
 }
 
@@ -130,8 +133,8 @@ function onEvent(name: DomainEvent, _payload: unknown): void {
   } else if (name === DomainEvent.ContractStarted) {
     showBanner('New contract — build! 🏗️', 4000);
   } else if (name === DomainEvent.SectionFull) {
-    // Flavour only — you squeeze past a busy section's checkpoint (never blocked).
-    showBanner('🦺 Busy section — squeezing past the checkpoint', 1800);
+    // Queued at a full checkpoint — brief; you're force-admitted within a few seconds.
+    showBanner('🦺 Section full — waiting at the checkpoint…', 2000);
   }
 }
 

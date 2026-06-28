@@ -21,6 +21,15 @@ export enum MessageType {
   S_SNAPSHOT_DELTA = 12,
   S_PONG = 13,
   S_EVENT = 14,
+  S_SECTIONS = 15,
+}
+
+/** Live state of one section (zone) for the client's zone labels (§4.4). Sections
+ *  vary in OSHA cap, so the client can't infer this — the server sends it. */
+export interface SectionInfo {
+  id: number;
+  cap: number;
+  count: number;
 }
 
 export interface CHello {
@@ -115,6 +124,12 @@ export interface SEvent {
   name: DomainEvent;
   payload?: unknown;
 }
+/** Per-section cap + live occupancy for the client's zone labels (sent globally;
+ *  there are only a handful of sections, so it's tiny). */
+export interface SSections {
+  t: MessageType.S_SECTIONS;
+  sections: SectionInfo[];
+}
 
 export type ClientMessage =
   | CHello
@@ -123,5 +138,5 @@ export type ClientMessage =
   | CViewport
   | CIntentInteract
   | CIntentFlag;
-export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent;
+export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent | SSections;
 export type AnyMessage = ClientMessage | ServerMessage;

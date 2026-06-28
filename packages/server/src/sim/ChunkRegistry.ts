@@ -1,6 +1,10 @@
-import { CHUNK_COLS, chunkColOf, SECTION_WIDTH, wrapDeltaX } from '@rms/shared';
+import { CHUNK_COLS, chunkColOf, SECTION_WIDTH, type SectionInfo, wrapDeltaX } from '@rms/shared';
 import { Chunk } from './Chunk';
 import type { Robot } from './Robot';
+
+/** A player held at a full checkpoint is force-admitted after this long, so a tight
+ *  zone is *felt* but can never wall a human (sections drain anyway as bots roam). */
+const MAX_PLAYER_WAIT_MS = 3000;
 
 /**
  * The chunk grid (§4.3): the planet's circumference tiled by `CHUNK_COLS` sections,
@@ -9,7 +13,7 @@ import type { Robot } from './Robot';
  * "chunks spread across sim servers" (§4.5). The sim loop, gateway, and broadcast
  * all go through it instead of reaching for a single chunk.
  */
-/** A flavour nudge: `connId` just squeezed past a busy section's checkpoint. */
+/** A checkpoint nudge: `connId` is queued at (or squeezing past) a full section. */
 export interface BlockedNotice {
   connId: number;
   section: number;
@@ -18,8 +22,22 @@ export interface BlockedNotice {
 export class ChunkRegistry {
   private readonly chunks: Chunk[] = [];
 
-  constructor(capacity = Number.POSITIVE_INFINITY) {
-    for (let c = 0; c < CHUNK_COLS; c++) this.chunks.push(new Chunk(c, capacity));
+  /** `capacity` is a single OSHA cap for every section, or a per-section array
+   *  (sections vary — some tight, some roomy). Missing/absent entries are uncapped. */
+  constructor(capacity: number | number[] = Number.POSITIVE_INFINITY) {
+    for (let c = 0; c < CHUNK_COLS; c++) {
+      const cap = Array.isArray(capacity) ? (capacity[c] ?? Number.POSITIVE_INFINITY) : capacity;
+      this.chunks.push(new Chunk(c, cap));
+    }
+  }
+
+  /** Per-section cap + live occupancy, for the client's zone labels. */
+  sectionStats(): SectionInfo[] {
+    return this.chunks.map((c) => ({
+      id: c.id,
+      cap: Number.isFinite(c.capacity) ? Math.round(c.capacity) : 0,
+      count: c.occupantCount,
+    }));
   }
 
   get(id: number): Chunk | undefined {
@@ -111,29 +129,41 @@ export class ChunkRegistry {
       for (const robot of from.occupants()) {
         if (from.contains(robot.x)) {
           robot.blocked = false;
+          robot.queuedSince = 0;
           continue;
         }
         const to = this.chunkAt(robot.x);
         if (to === from) {
           robot.blocked = false;
+          robot.queuedSince = 0;
           continue;
         }
         const approved = incoming.get(to.id) ?? 0;
         const full = to.occupantCount + approved >= to.capacity;
-        if (full && robot.isNpc) {
-          // A bot queues at the checkpoint, held just inside its current section.
-          const rightNeighbor = (from.id + 1) % this.chunks.length;
-          robot.x = to.id === rightNeighbor ? from.x1 - edge : from.x0 + edge;
-          robot.blocked = true;
-          continue;
+        if (full) {
+          const isPlayer = !robot.isNpc && robot.ownerConnectionId !== null;
+          // A player is force-admitted after a bounded wait so a tight zone is felt
+          // but never walls them; bots wait until a slot frees.
+          const forceAdmit =
+            isPlayer && robot.queuedSince !== 0 && now - robot.queuedSince >= MAX_PLAYER_WAIT_MS;
+          if (!forceAdmit) {
+            // Queue at the checkpoint, held just inside the current section.
+            const rightNeighbor = (from.id + 1) % this.chunks.length;
+            robot.x = to.id === rightNeighbor ? from.x1 - edge : from.x0 + edge;
+            robot.blocked = true;
+            if (isPlayer) {
+              if (robot.queuedSince === 0) robot.queuedSince = now;
+              if (robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
+                robot.blockedNotifyAt = now + 1500;
+                notices.push({ connId: robot.ownerConnectionId, section: to.id });
+              }
+            }
+            continue;
+          }
         }
-        // Players always pass; bots pass when there's room. A player squeezing past
-        // a full section gets a throttled flavour nudge (never a block).
-        if (full && robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
-          robot.blockedNotifyAt = now + 1500;
-          notices.push({ connId: robot.ownerConnectionId, section: to.id });
-        }
+        // Admitted: there was room, or a player has waited out its bounded queue.
         robot.blocked = false;
+        robot.queuedSince = 0;
         incoming.set(to.id, approved + 1);
         moves.push({ from, to, robot });
       }

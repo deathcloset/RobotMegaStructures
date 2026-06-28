@@ -1,4 +1,4 @@
-import { DomainEvent, type EntitySnapshot, encodeMessage } from '@rms/shared';
+import { DomainEvent, type EntitySnapshot, encodeMessage, MessageType } from '@rms/shared';
 import type { Snapshotter } from '../broadcast/Snapshotter';
 import type { ServerConfig } from '../config';
 import type { Metrics } from '../metrics/Metrics';
@@ -117,6 +117,16 @@ export class SimLoop {
       recipients,
       recipients > 0 ? Math.round(totalVisible / recipients) : 0,
     );
+
+    // Section stats are global + tiny (a handful of sections) — encode once, send to
+    // everyone so the client can label zones it can't even see.
+    if (recipients > 0) {
+      const sections = encodeMessage({
+        t: MessageType.S_SECTIONS,
+        sections: this.chunks.sectionStats(),
+      });
+      for (const conn of this.gateway.all) if (conn.helloOk) conn.sendBytes(sections, now);
+    }
     this.metrics.recordBroadcastTime(Date.now() - bStart);
 
     // periodic durable snapshot seam (no-op in memory; real in Phase 2/3)

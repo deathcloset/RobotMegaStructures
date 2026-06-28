@@ -1,5 +1,11 @@
-import { EntityKind, PieceStatus, RobotStatusBit } from '@rms/shared';
-import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import {
+  EntityKind,
+  PieceStatus,
+  RobotStatusBit,
+  type SectionInfo,
+  sectionCenterX,
+} from '@rms/shared';
+import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { RenderEntity } from '../world/EntityStore';
 import type { Camera } from './Camera';
 
@@ -35,6 +41,9 @@ export class Stage {
   private readonly sprites = new Map<number, Sprite>();
   /** Small "held material" marker shown above a carrying robot. */
   private readonly cargo = new Map<number, Sprite>();
+  /** Floating "ZONE n · count/cap" labels above each section, keyed by section id. */
+  private readonly labels = new Map<number, Text>();
+  private sections: SectionInfo[] = [];
   private myRobotId: number | null = null;
   // World geometry (from the welcome); 0 width disables wrap until we know it.
   private worldWidth = 0;
@@ -92,6 +101,11 @@ export class Stage {
 
   setMyRobot(id: number): void {
     this.myRobotId = id;
+  }
+
+  /** Adopt the latest per-section cap/occupancy for the zone labels (§4.4). */
+  setSections(sections: SectionInfo[]): void {
+    this.sections = sections;
   }
 
   private makeCircleTexture(r: number): Texture {
@@ -195,6 +209,46 @@ export class Stage {
         sprite.destroy();
         this.sprites.delete(id);
         this.dropCargo(id);
+      }
+    }
+    this.drawLabels();
+  }
+
+  /** Floating zone labels above each section: "ZONE n" + live count/cap, reddening
+   *  when a zone is full. Counter-scaled so they stay a constant on-screen size at
+   *  any zoom, and wrap-positioned like everything else. */
+  private drawLabels(): void {
+    const labelY = this.groundY - 420; // up in the sky, above the structure
+    const present = new Set<number>();
+    for (const s of this.sections) {
+      present.add(s.id);
+      let label = this.labels.get(s.id);
+      if (!label) {
+        label = new Text({
+          text: '',
+          style: {
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: 13,
+            fill: 0xffffff,
+            align: 'center',
+            stroke: { color: 0x05070b, width: 4 },
+          },
+        });
+        label.anchor.set(0.5);
+        this.world.addChild(label);
+        this.labels.set(s.id, label);
+      }
+      const full = s.cap > 0 && s.count >= s.cap;
+      const txt = `ZONE ${s.id + 1}\n${s.count}/${s.cap || '∞'}${full ? ' FULL' : ''}`;
+      if (label.text !== txt) label.text = txt;
+      label.tint = full ? 0xff8a5c : 0xbcd2ea; // cheap recolour (no re-render)
+      label.position.set(this.wrapNear(sectionCenterX(s.id)), labelY);
+      label.scale.set(1 / this.camScale); // constant on-screen size at any zoom
+    }
+    for (const [id, label] of this.labels) {
+      if (!present.has(id)) {
+        label.destroy();
+        this.labels.delete(id);
       }
     }
   }

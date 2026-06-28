@@ -52,6 +52,9 @@ export class Robot {
   blocked = false;
   /** Throttle for the "section full" nudge to the owning player while blocked. */
   blockedNotifyAt = 0;
+  /** When this robot started waiting at the current checkpoint (0 = not waiting).
+   *  A player is force-admitted after a bounded wait so they're never walled. */
+  queuedSince = 0;
   /** Movement speed (world units/sec). Builders run a little slower than players. */
   speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot

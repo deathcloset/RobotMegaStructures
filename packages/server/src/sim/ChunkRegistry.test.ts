@@ -58,17 +58,31 @@ describe('ChunkRegistry — OSHA caps (§4.4)', () => {
     expect(notices).toEqual([]); // bots get no nudge
   });
 
-  it('never walls a PLAYER — they pass a full section (with a flavour nudge)', () => {
+  it('queues a player briefly at a full section, then force-admits (never walled)', () => {
     const reg = new ChunkRegistry(1);
     reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true)); // section 1 full
     const player = new Robot(1, 'p', 1100, 800, false, 1); // walked to an x in section 1
     reg.get(0)!.addOccupant(player);
 
-    const notices = reg.settle(1000);
+    const n1 = reg.settle(1000);
+    expect(player.blocked).toBe(true); // held at the checkpoint (queuing)
+    expect(reg.get(1)!.getRobot(1)).toBeUndefined(); // not in yet
+    expect(n1).toEqual([{ connId: 1, section: 1 }]); // nudged while waiting
 
-    expect(reg.get(1)!.getRobot(1)).toBe(player); // crossed despite the cap
+    player.x = 1100; // still pushing toward section 1
+    reg.settle(1000 + 4000); // past the bounded wait (3s)
+    expect(reg.get(1)!.getRobot(1)).toBe(player); // force-admitted — never walled
     expect(player.blocked).toBe(false);
-    expect(notices).toEqual([{ connId: 1, section: 1 }]); // just a flavour nudge
+  });
+
+  it('gives sections their own caps (an array) and reports them as stats', () => {
+    const reg = new ChunkRegistry([4, 12]); // tight section 0, roomy section 1
+    expect(reg.get(0)!.capacity).toBe(4);
+    expect(reg.get(1)!.capacity).toBe(12);
+    reg.get(0)!.addOccupant(new Robot(-1, 'n', 100, 800, true));
+    const stats = reg.sectionStats();
+    expect(stats[0]).toEqual({ id: 0, cap: 4, count: 1 });
+    expect(stats[1]).toEqual({ id: 1, cap: 12, count: 0 });
   });
 
   it('admits only the free slots and queues the rest of the bots (no overfill)', () => {

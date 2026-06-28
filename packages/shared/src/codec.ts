@@ -86,6 +86,8 @@ function toWire(msg: AnyMessage): unknown[] {
       return [msg.t, msg.clientTime, msg.serverTime];
     case MessageType.S_EVENT:
       return [msg.t, msg.name, msg.payload ?? null];
+    case MessageType.S_SECTIONS:
+      return [msg.t, msg.sections.map((s) => [s.id, s.cap, s.count])];
   }
 }
 
@@ -155,6 +157,11 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
       return { t, clientTime: a[1], serverTime: a[2] };
     case MessageType.S_EVENT:
       return { t, name: a[1], payload: a[2] ?? undefined };
+    case MessageType.S_SECTIONS:
+      return {
+        t,
+        sections: (a[1] as number[][]).map((s) => ({ id: s[0]!, cap: s[1]!, count: s[2]! })),
+      };
     default:
       throw new Error(`unknown message type: ${String(t)}`);
   }

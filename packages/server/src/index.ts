@@ -16,11 +16,15 @@ import { InMemoryWorldRepo } from './state/repository';
 const config = loadConfig();
 const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
-// Each section's cap floats a small margin above its seeded crew: enough global
-// slack that roaming crews never deadlock, but tight enough that cross-section
-// traffic actually reaches it and queues at busy checkpoints (players pass anyway).
-const sectionCapacity = Math.max(config.sectionCapacity, config.seedRobots + 3);
-const chunks = new ChunkRegistry(sectionCapacity);
+// Sections vary in their OSHA cap — some tight (real bottlenecks you queue through),
+// some roomy. The pattern is anchored to SECTION_CAPACITY and cycles across the ring,
+// so the planet has a mix of crowded and quiet zones.
+const CAP_MULT = [1, 0.45, 1.3, 0.65, 0.35, 1.15];
+const MIN_SECTION_CAP = 3;
+const sectionCaps = Array.from({ length: CHUNK_COLS }, (_, i) =>
+  Math.max(MIN_SECTION_CAP, Math.round(config.sectionCapacity * CAP_MULT[i % CAP_MULT.length]!)),
+);
+const chunks = new ChunkRegistry(sectionCaps);
 
 // Every section is its own worksite with its own crew (the chunk grid, § Phase 2).
 let nextNpcId = 0;
@@ -72,7 +76,7 @@ httpServer.listen(config.port, config.host, () => {
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
     sections: CHUNK_COLS,
-    sectionCapacity,
+    sectionCaps: sectionCaps.join('/'),
     piecesPerSection: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,
@@ -86,8 +90,11 @@ httpServer.listen(config.port, config.host, () => {
  *  section as ambiance. */
 function seedRobots(chunk: Chunk): void {
   const span = chunk.x1 - chunk.x0;
-  for (let i = 0; i < config.seedRobots; i++) {
-    // Spread the crew across this section, near the surface.
+  // Population scales with this section's cap, kept a margin below it so there's
+  // always room for visitors + roaming crews: tight zones are sparse, roomy ones busy.
+  const pop = Math.max(2, Math.min(config.seedRobots, chunk.capacity - 3));
+  const builders = Math.min(config.seedBuilders, pop);
+  for (let i = 0; i < pop; i++) {
     nextNpcId += 1;
     const y = chunk.groundY - 20 - Math.random() * 200;
     const robot = new Robot(
@@ -97,7 +104,7 @@ function seedRobots(chunk: Chunk): void {
       y,
       true,
     );
-    if (i < config.seedBuilders) {
+    if (i < builders) {
       robot.isBuilder = true;
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
       robot.prefersMining = i < config.seedMiners; // some prospect the veins

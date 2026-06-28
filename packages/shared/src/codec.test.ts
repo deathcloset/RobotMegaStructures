@@ -60,6 +60,13 @@ const samples: AnyMessage[] = [
   },
   { t: MessageType.S_PONG, clientTime: 5, serverTime: 7 },
   { t: MessageType.S_EVENT, name: 3, payload: { robotId: 1 } },
+  {
+    t: MessageType.S_SECTIONS,
+    sections: [
+      { id: 0, cap: 12, count: 7 },
+      { id: 1, cap: 5, count: 5 },
+    ],
+  },
 ];
 
 describe('codec round-trip', () => {
