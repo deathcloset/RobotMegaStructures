@@ -106,4 +106,47 @@ describe('ChunkRegistry — OSHA caps (§4.4)', () => {
     expect(reg.get(1)!.getRobot(-1)).toBe(bot);
     expect(bot.blocked).toBe(false);
   });
+
+  it('counts queued bots for the metrics readout', () => {
+    const reg = new ChunkRegistry(1);
+    reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true)); // section 1 full
+    reg.get(0)!.addOccupant(new Robot(-1, 'bot', 1100, 800, true)); // a bot wants in
+    reg.settle(1000);
+    expect(reg.queuedCount()).toBe(1);
+  });
+});
+
+describe('ChunkRegistry — roaming work crews', () => {
+  it('a roaming builder leaves its home section to work another', () => {
+    const reg = new ChunkRegistry(); // 6 sections, no cap
+    const b = new Robot(-1, 'b', reg.get(0)!.centerX, 800, true);
+    b.isBuilder = true;
+    b.canMigrate = true;
+    reg.get(0)!.addOccupant(b);
+
+    let now = 0;
+    for (let i = 0; i < 700 && reg.chunkOfRobot(-1) === reg.get(0); i++) {
+      now += 100;
+      for (const c of reg.all()) c.step(0.1, now);
+      reg.settle(now);
+    }
+
+    expect(reg.chunkOfRobot(-1)).not.toBe(reg.get(0)); // it migrated out of section 0
+  });
+
+  it('a non-roaming builder (canMigrate=false) stays put', () => {
+    const reg = new ChunkRegistry();
+    const b = new Robot(-1, 'b', reg.get(0)!.centerX, 800, true);
+    b.isBuilder = true; // canMigrate defaults false
+    reg.get(0)!.addOccupant(b);
+
+    let now = 0;
+    for (let i = 0; i < 300; i++) {
+      now += 100;
+      for (const c of reg.all()) c.step(0.1, now);
+      reg.settle(now);
+    }
+
+    expect(reg.chunkOfRobot(-1)).toBe(reg.get(0)); // never wandered off
+  });
 });

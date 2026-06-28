@@ -82,6 +82,14 @@ export class ChunkRegistry {
     this.chunkOfRobot(robotId)?.removeOccupant(robotId);
   }
 
+  /** How many bots are currently held (queued) at a checkpoint — for the metrics
+   *  readout, so checkpoint pressure is observable. */
+  queuedCount(): number {
+    let n = 0;
+    for (const c of this.chunks) for (const r of c.occupants()) if (r.blocked) n += 1;
+    return n;
+  }
+
   /**
    * The cross-section handoff at the OSHA checkpoint (§4.4). A robot that walked out
    * of its section is moved to the one that now owns its position. The cap throttles

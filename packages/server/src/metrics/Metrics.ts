@@ -20,6 +20,8 @@ export class Metrics {
   intentsApplied = 0;
   lastEntitiesInView = 0;
   tickCount = 0;
+  /** Bots currently queued at section checkpoints (§4.4) — set each tick. */
+  queued = 0;
 
   recordEgress(bytes: number): void {
     this.egressBytesWindow += bytes;
@@ -65,6 +67,7 @@ export class Metrics {
       entities_in_view: this.lastEntitiesInView,
       messages_in: this.messagesIn,
       intents_applied: this.intentsApplied,
+      queued: this.queued,
       tick_count: this.tickCount,
       tick_ms_p50: pct(this.tickSamples, 0.5),
       tick_ms_p95: pct(this.tickSamples, 0.95),

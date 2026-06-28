@@ -1,4 +1,5 @@
 import {
+  CHUNK_COLS,
   type ClientMessage,
   DEFAULT_CONTRACT_RESET_MS,
   DomainEvent,
@@ -9,6 +10,7 @@ import {
   MINE_DURATION_MS,
   PieceStatus,
   SECTION_WIDTH,
+  sectionCenterX,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
   WORLD_HEIGHT,
@@ -25,6 +27,17 @@ import type { Robot } from './Robot';
 /** Work-flag ids are derived from the owner's robot id (one flag per player) and
  *  kept disjoint from the seeded-entity ranges in `blueprint.ts`. */
 const FLAG_ID_BASE = 4_000_000;
+
+/** How often a roaming builder relocates to another section (ms): a base interval
+ *  plus a random span, so crews migrate as a steady trickle rather than in lockstep
+ *  — keeping cross-section traffic (and thus checkpoint queues) alive. */
+const RELOCATE_MIN_MS = 10_000;
+const RELOCATE_SPAN_MS = 15_000;
+/** A "hot" section rotates this often (ms); relocating crews are biased toward it,
+ *  so a focus area fills and its checkpoints visibly back up before it moves on.
+ *  Derived from the clock so every section agrees without shared state. */
+const HOT_PERIOD_MS = 30_000;
+const HOT_BIAS = 0.4; // fraction of relocations that head for the hot section
 
 export interface ChunkEvent {
   name: DomainEvent;
@@ -267,6 +280,14 @@ export class Chunk {
    *  nearest depot to the nearest ghost. A short dawdle keeps bots visibly less
    *  efficient than players. The seed of the commandable crew/swarm. */
   private driveBuilder(robot: Robot, now: number): void {
+    // Roaming work crews: a migrating builder heads for another section and only
+    // works again once it arrives — queuing at full checkpoints along the way. This
+    // cross-section traffic is what makes the OSHA caps actually fill and queue.
+    if (robot.migratingTo !== null) {
+      if (this.id === robot.migratingTo)
+        robot.migratingTo = null; // arrived → work here
+      else if (robot.pendingAction === null) return; // still travelling / queuing
+    }
     if (robot.pendingAction !== null) {
       this.resolvePending(robot, now);
       // Finished (and not now holding/welding) → dawdle before the next action.
@@ -276,6 +297,26 @@ export class Chunk {
       return;
     }
     if (now < robot.nextActionAt) return;
+
+    // Periodically pull up stakes and go work another section (first time staggered).
+    if (robot.canMigrate) {
+      if (robot.relocateAt === 0) {
+        robot.relocateAt = now + Math.random() * RELOCATE_SPAN_MS;
+      } else if (!robot.carrying && now >= robot.relocateAt) {
+        robot.relocateAt = now + RELOCATE_MIN_MS + Math.random() * RELOCATE_SPAN_MS;
+        // Bias toward the rotating "hot" section so crews converge and queue there;
+        // otherwise pick any other section. The hot section is clock-derived, so all
+        // sections agree without any shared state.
+        const hot = Math.floor(now / HOT_PERIOD_MS) % CHUNK_COLS;
+        robot.migratingTo =
+          hot !== this.id && Math.random() < HOT_BIAS ? hot : this.randomOtherSection();
+        robot.setTarget(
+          sectionCenterX(robot.migratingTo) + (Math.random() * 2 - 1) * 180,
+          this.wanderY(),
+        );
+        return;
+      }
+    }
 
     const weldNeedingPartner = this.nearestReservedWeld(robot.x, robot.y, robot.id);
     if (weldNeedingPartner) {
@@ -512,6 +553,15 @@ export class Chunk {
    *  the ground rather than floating up into the empty sky. */
   private wanderY(): number {
     return this.groundY - Math.random() * 220;
+  }
+
+  /** A random section other than this one (uniform) — a relocating builder's
+   *  destination. */
+  private randomOtherSection(): number {
+    if (CHUNK_COLS <= 1) return this.id;
+    let d = Math.floor(Math.random() * (CHUNK_COLS - 1));
+    if (d >= this.id) d += 1; // skip self → uniform over the other sections
+    return d;
   }
 
   private nearestResource(x: number, y: number): Resource | null {

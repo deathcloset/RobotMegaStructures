@@ -35,6 +35,12 @@ export class Robot {
   /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
    *  so AI bots are visibly less efficient than players. */
   nextActionAt = 0;
+  /** Roaming work crews (§4.4 traffic): the section this builder is travelling to
+   *  (null = working locally), when it'll next consider relocating, and whether it
+   *  may roam at all (seeded builders do; test/ad-hoc builders don't). */
+  migratingTo: number | null = null;
+  relocateAt = 0;
+  canMigrate = false;
   /** Weld piece this robot is currently holding/welding (§10). While engaged it
    *  holds position and isn't reassigned; the Chunk's weld logic frees it. */
   engagedPieceId: number | null = null;

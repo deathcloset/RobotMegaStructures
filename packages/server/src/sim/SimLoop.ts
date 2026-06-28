@@ -61,10 +61,11 @@ export class SimLoop {
     this.tick += 1;
 
     // 1b. hand off robots across section boundaries (OSHA checkpoint); nudge any
-    //     player held at a full section's checkpoint.
+    //     player squeezing past a full one. Track how many bots are queued.
     for (const n of this.chunks.settle(start)) {
       this.gateway.sendEventTo(n.connId, DomainEvent.SectionFull, { section: n.section });
     }
+    this.metrics.queued = this.chunks.queuedCount();
 
     // 2. drain + broadcast domain events (the §6 first-class stream)
     for (const chunk of this.chunks.all()) {

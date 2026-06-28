@@ -16,10 +16,10 @@ import { InMemoryWorldRepo } from './state/repository';
 const config = loadConfig();
 const metrics = new Metrics();
 const repo = new InMemoryWorldRepo();
-// Guarantee each section has headroom above its resident bots, so roaming bots can
-// always flow through checkpoints (players pass regardless). Robust even if the env
-// seeds a dense garrison — never let the cap sit at or below the seeded count.
-const sectionCapacity = Math.max(config.sectionCapacity, config.seedRobots + 6);
+// Each section's cap floats a small margin above its seeded crew: enough global
+// slack that roaming crews never deadlock, but tight enough that cross-section
+// traffic actually reaches it and queues at busy checkpoints (players pass anyway).
+const sectionCapacity = Math.max(config.sectionCapacity, config.seedRobots + 3);
 const chunks = new ChunkRegistry(sectionCapacity);
 
 // Every section is its own worksite with its own crew (the chunk grid, § Phase 2).
@@ -53,6 +53,7 @@ const summary = setInterval(() => {
     bytes_per_player_per_tick: s.bytes_per_player_per_tick,
     tick_p95: s.tick_ms_p95,
     entities: s.entities_in_view,
+    queued: s.queued,
     mode: config.snapshotMode,
   });
 }, config.metricsLogMs);
@@ -100,6 +101,7 @@ function seedRobots(chunk: Chunk): void {
       robot.isBuilder = true;
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
       robot.prefersMining = i < config.seedMiners; // some prospect the veins
+      robot.canMigrate = true; // roaming work crews — travel between sections
     } else {
       robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
     }

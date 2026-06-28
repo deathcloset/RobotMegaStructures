@@ -37,24 +37,28 @@ an invisible boundary has no place in a co-op game — so you always pass, with 
   *bot* at a full section's checkpoint (clamped just inside its current section) and
   lets it cross once a slot frees; admissions are counted so a burst can't overfill.
   Players pass regardless; new players spawn into a section with room.
-- **Bots flow** — wanderer NPCs now roam the *whole planet* (not just their own
-  section), so there's real traffic through the checkpoints and the caps come alive.
-  The seeded garrison can never saturate a section: effective capacity is held a margin
-  above the per-section seed, so roaming bots always have room (no gridlock).
+- **Bots flow, and queue** — NPCs roam between sections: wanderers drift the whole
+  planet and builder **work crews migrate** section-to-section, biased toward a rotating
+  "hot" section (clock-derived, no shared state) so crews converge and a focus area's
+  checkpoints visibly back up, then clear as it moves on. The seeded garrison can never
+  saturate a section (effective cap floats a margin above the seed), so it's queue-and-
+  flow, not gridlock. A `queued` gauge in the metrics log makes the pressure observable.
 - **Feedback**: a player squeezing past a full section gets a throttled `SectionFull`
   event → a "🦺 Busy section — squeezing past the checkpoint" toast (flavour, never a
   block). Protocol → **8**.
-- **Proven**: unit (73 tests, +5) — a bot queued at a full checkpoint, a player passing
-  one (with the flavour nudge), no overfill under a burst, a queued bot crossing once a
-  slot frees, spawn avoiding a full section. Wire: under the dense config that had
-  *walled* players (`SEED_ROBOTS=12, SECTION_CAPACITY=12`), a player now crosses freely,
-  bots roam between sections (counts vary, e.g. `[13,15,9,14,13,10]`), and no section
-  gridlocks (effective cap 18 keeps headroom).
+- **Proven**: unit (76 tests, +8) — a bot queued at a full checkpoint, a player passing
+  one (flavour nudge), no overfill under a burst, a queued bot crossing once a slot
+  frees, spawn avoiding a full section, the `queued` gauge, and a roaming builder
+  migrating out of its section. Wire (dense config that had *walled* players): players
+  cross freely; with roaming crews + the rotating hot section, checkpoints visibly queue
+  (up to ~16 bots waiting, ~22 bunched at boundaries) and clear in waves — no gridlock.
 
-> Caught in playtest: the first cut **hard-blocked players** at full sections, and
-> since seeded bots never left their section, a section seeded to its cap became a
-> permanent wall — you'd sit at an invisible boundary forever. Fixed here: players
-> always pass, bots roam so sections drain, and the cap can never sit at/below the seed.
+> Two playtest catches, both fixed here (Ben's calls): **(1)** the first cut
+> hard-blocked *players* at full sections — and since seeded bots never left their
+> section, a section seeded to its cap was a permanent wall (sit there forever). Now
+> players always pass and the cap can't sit at/below the seed. **(2)** With everyone
+> passing there was then *no queue at all* — so builder crews now roam (drawn to a
+> rotating hot section), making checkpoints actually fill and queue.
 
 ### Slice 4 — the section grid + interest management 🧩
 
