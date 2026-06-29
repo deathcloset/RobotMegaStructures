@@ -6,7 +6,12 @@ import { advanceToward } from './movement';
 export type PendingAction =
   | { kind: 'pickup'; targetId: number }
   | { kind: 'deliver'; targetId: number }
-  | { kind: 'weld'; targetId: number };
+  | { kind: 'weld'; targetId: number }
+  | { kind: 'mine'; targetId: number }
+  /** Walk to a nested zone's gate, then enter it (or queue at the gate if it's at
+   *  its cap — a nested zone is a hard cap, since entry is opt-in). `targetId` is
+   *  the gate's entity id. */
+  | { kind: 'enter'; targetId: number };
 
 export class Robot {
   readonly id: number;
@@ -27,12 +32,37 @@ export class Robot {
   /** An NPC that autonomously runs the build loop (vs. one that just wanders).
    *  The seed of the future commandable AI crew / swarm. */
   isBuilder = false;
+  /** A builder that prospects the planet's ore veins for material instead of using
+   *  the convenient depots (it falls back to a depot if no vein is available). The
+   *  seed of distinct robot roles for the crews/swarms slice. */
+  prefersMining = false;
   /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
    *  so AI bots are visibly less efficient than players. */
   nextActionAt = 0;
+  /** Roaming work crews (§4.4 traffic): the section this builder is travelling to
+   *  (null = working locally), when it'll next consider relocating, and whether it
+   *  may roam at all (seeded builders do; test/ad-hoc builders don't). */
+  migratingTo: number | null = null;
+  relocateAt = 0;
+  canMigrate = false;
   /** Weld piece this robot is currently holding/welding (§10). While engaged it
    *  holds position and isn't reassigned; the Chunk's weld logic frees it. */
   engagedPieceId: number | null = null;
+  /** When the current dig of an ore vein finishes (§ Phase 2 mining); null when
+   *  not mining. The robot holds at the vein until then. */
+  mineUntil: number | null = null;
+  /** The nested zone (§4.4) this robot is currently inside (its id), or null when
+   *  out on the ring. Set on entry through a gate, cleared on leave / handoff /
+   *  any manual move — so a traverser is never auto-pulled into a chamber. */
+  insideZone: number | null = null;
+  /** Held at a section checkpoint because the next section is at its OSHA cap
+   *  (§4.4). Transient, set by the registry's handoff each tick. */
+  blocked = false;
+  /** Throttle for the "section full" nudge to the owning player while blocked. */
+  blockedNotifyAt = 0;
+  /** When this robot started waiting at the current checkpoint (0 = not waiting).
+   *  A player is force-admitted after a bounded wait so they're never walled. */
+  queuedSince = 0;
   /** Movement speed (world units/sec). Builders run a little slower than players. */
   speed = ROBOT_SPEED;
   /** Connection controlling this robot. Null for an NPC, or for a player robot
@@ -79,8 +109,10 @@ export class Robot {
     this.moving = false;
   }
 
-  step(dt: number): void {
-    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed);
+  /** `wrapWidth` (the world circumference) makes movement honour the cylinder
+   *  seam; 0 keeps the flat-plane behaviour (used by the movement unit tests). */
+  step(dt: number, wrapWidth = 0): void {
+    const r = advanceToward(this, { x: this.targetX, y: this.targetY }, dt, this.speed, wrapWidth);
     this.x = r.x;
     this.y = r.y;
     this.moving = !r.arrived;

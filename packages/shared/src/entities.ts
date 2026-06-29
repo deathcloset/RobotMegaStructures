@@ -11,6 +11,21 @@ export enum EntityKind {
    *  PieceStatus state machine, rendered distinctly so players know it needs a
    *  partner. */
   WeldPiece = 3,
+  /** An ore deposit on the planet surface — mine it for material (§ Phase 2).
+   *  A renewable vein: `status` carries its remaining richness (0..DEPOSIT_MAX)
+   *  so the client can show how full it is. The reason to roam the wide world;
+   *  depots are the convenient starter, veins are the wider story. */
+  Deposit = 4,
+  /** A player's work-flag (§ Phase 2 crews). Planted to rally the builder crew to
+   *  work that area; `status` carries the owner's robot id so a client can tell its
+   *  own flag from others'. */
+  Flag = 5,
+  /** The entrance to a nested zone (§4.4) — a capped interior chamber you opt into.
+   *  Tap it to enter (your robot walks here, then ascends into the chamber) or to
+   *  leave; the server decides which from context. `status` is 1 when the zone is
+   *  full (the client reddens it), else 0. The zone's live count/cap rides
+   *  S_SECTIONS like any other zone. */
+  Gate = 6,
 }
 
 /**

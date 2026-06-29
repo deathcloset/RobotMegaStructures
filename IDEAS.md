@@ -25,6 +25,29 @@ When a megastructure is finished it shouldn't just blink out of existence.
   **durable persistence** (Postgres archive of completed structures, pillar #5) —
   that's Phase 3 territory.
 
+## Distributed hosting — sections across servers (Ben, 2026-06-21)
+
+The chunk grid (a megastructure divided into sections) is built to become a
+**distributed** thing: each section can live on its own server, so a megastructure
+is hosted cooperatively across many boxes — even tiny ones. Ben's framing:
+
+- A **small server hosts a small section** — e.g. enough for ~8 bots to work that
+  part of the structure. Hosting scales by adding cheap boxes, not big ones.
+- A section is **offline only if no compute/capacity is available** for it — the
+  default is "as much of the megastructure as the fleet can host is live." When a
+  hosting server drops, its section could be **subsumed by a spare/standby server**
+  (if that option is enabled), so the structure stays as whole as the fleet allows.
+- This rides the design's §4.4/§4.5 path: the OSHA checkpoint **is** the sharding
+  boundary, cross-section handoff becomes a network handoff, and a Redis/Valkey
+  pub/sub bus + a chunk-ownership registry coordinate which server owns which
+  section. Capacity/failover policy (who subsumes an orphaned section, when to take
+  one offline) is the orchestration layer on top.
+- Engine fit (so it's near-free later): we keep each `Chunk` a clean message-in /
+  state-out unit and route everything through `ChunkRegistry`, so "the registry
+  hands a chunk to another process/box" is a swap of that one indirection — not a
+  rewrite. We deliberately **don't** build the multi-box distribution until the
+  single-box grid is proven (§2.5): no Redis, no ownership protocol on spec.
+
 ## The "megastructures" game-set (north star)
 
 We're implicitly building toward an **interconnected set of "megastructures"

@@ -7,6 +7,7 @@ import {
   MessageType,
   PROTOCOL_VERSION,
   type ServerMessage,
+  WORLD_WRAP_X,
 } from '@rms/shared';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { ServerConfig } from '../config';
@@ -93,8 +94,11 @@ export class WsGateway {
         return;
       case MessageType.C_INTENT_MOVE:
       case MessageType.C_INTENT_INTERACT:
+      case MessageType.C_INTENT_FLAG:
         if (conn.robotId === null) return;
-        this.chunks.primary.applyIntent(conn.robotId, msg);
+        // Apply in whichever section currently holds the robot (it may have crossed
+        // a boundary since it joined).
+        this.chunks.chunkOfRobot(conn.robotId)?.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;
         return;
       default:
@@ -117,11 +121,11 @@ export class WsGateway {
     // Fresh spawn.
     conn.helloOk = true;
     const robotId = this.nextRobotId++;
-    const chunk = this.chunks.primary;
-    // Spawn below the blueprint, between it and the depots, so new players land
-    // looking at the work site.
-    const spawnX = chunk.size / 2 + (Math.random() * 2 - 1) * 60;
-    const spawnY = chunk.size * 0.55 + (Math.random() * 2 - 1) * 30;
+    // Spawn into a section with room under the OSHA cap, by its worksite, so new
+    // players land looking at a structure rising in front of them.
+    const chunk = this.chunks.spawnSection();
+    const spawnX = chunk.centerX + (Math.random() * 2 - 1) * 80;
+    const spawnY = chunk.groundY - 24 - Math.random() * 40;
     const robot = new Robot(
       robotId,
       this.repo.nextStableId('robot'),
@@ -145,7 +149,7 @@ export class WsGateway {
   private tryResume(conn: Connection, token: string, now: number): boolean {
     const robotId = this.sessions.get(token);
     if (robotId === undefined) return false;
-    const robot = this.chunks.primary.getRobot(robotId);
+    const robot = this.chunks.getRobot(robotId);
     if (!robot) {
       this.sessions.delete(token); // stale: robot expired during the grace window
       return false;
@@ -181,8 +185,10 @@ export class WsGateway {
         yourRobotId: robotId,
         tickHz: this.config.tickHz,
         broadcastHz: this.config.broadcastHz,
-        chunkId: chunk.id,
-        worldBounds: [0, 0, chunk.size, chunk.size],
+        chunkId: this.chunks.chunkOfRobot(robotId)?.id ?? chunk.id,
+        worldBounds: [0, 0, chunk.width, chunk.height],
+        groundY: chunk.groundY,
+        wrapX: WORLD_WRAP_X,
         serverTime: now,
         sessionToken: token,
         resumed,
@@ -198,7 +204,7 @@ export class WsGateway {
     // §4.7 grace: don't vanish the robot. Park it (idle, still visible, carried
     // item kept) and schedule removal; a reconnect within the window resumes it.
     if (conn.robotId !== null) {
-      const robot = this.chunks.primary.getRobot(conn.robotId);
+      const robot = this.chunks.getRobot(conn.robotId);
       if (robot && robot.ownerConnectionId === conn.id) {
         robot.ownerConnectionId = null;
         robot.pendingAction = null;
@@ -217,9 +223,9 @@ export class WsGateway {
   /** Grace window elapsed without a reconnect — remove the parked robot for good. */
   private finalizeRemoval(robotId: number): void {
     this.graceTimers.delete(robotId);
-    const robot = this.chunks.primary.getRobot(robotId);
+    const robot = this.chunks.getRobot(robotId);
     if (robot?.parked) {
-      this.chunks.primary.removeOccupant(robotId);
+      this.chunks.removeRobot(robotId);
       this.broadcastEvent(DomainEvent.RobotDisconnected, { robotId });
       log.info('robot grace expired', { robotId });
     }
@@ -244,6 +250,12 @@ export class WsGateway {
     for (const conn of this.connections.values()) {
       if (conn.helloOk) conn.send(msg, now);
     }
+  }
+
+  /** Send a domain event to one connection (e.g. a personal checkpoint nudge). */
+  sendEventTo(connId: number, name: DomainEvent, payload: unknown): void {
+    const conn = this.connections.get(connId);
+    if (conn?.helloOk) conn.send({ t: MessageType.S_EVENT, name, payload }, Date.now());
   }
 
   /** Heartbeat: terminate sockets that didn't answer the previous ping. */

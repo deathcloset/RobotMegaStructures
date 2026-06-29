@@ -44,6 +44,8 @@ function toWire(msg: AnyMessage): unknown[] {
       return [msg.t, toFixed16(msg.tx), toFixed16(msg.ty)];
     case MessageType.C_INTENT_INTERACT:
       return [msg.t, msg.targetId];
+    case MessageType.C_INTENT_FLAG:
+      return [msg.t, toFixed16(msg.tx), toFixed16(msg.ty)];
     case MessageType.C_PING:
       return [msg.t, msg.clientTime];
     case MessageType.C_VIEWPORT:
@@ -65,6 +67,8 @@ function toWire(msg: AnyMessage): unknown[] {
         msg.serverTime,
         msg.sessionToken,
         msg.resumed,
+        toFixed16(msg.groundY),
+        msg.wrapX,
       ];
     case MessageType.S_SNAPSHOT_FULL:
       return [msg.t, msg.tick, msg.serverTime, msg.entities.map(entityToWire)];
@@ -82,6 +86,18 @@ function toWire(msg: AnyMessage): unknown[] {
       return [msg.t, msg.clientTime, msg.serverTime];
     case MessageType.S_EVENT:
       return [msg.t, msg.name, msg.payload ?? null];
+    case MessageType.S_SECTIONS:
+      return [
+        msg.t,
+        msg.sections.map((s) => [
+          s.id,
+          s.cap,
+          s.count,
+          toFixed16(s.x),
+          toFixed16(s.y),
+          s.nested ? 1 : 0,
+        ]),
+      ];
   }
 }
 
@@ -104,6 +120,8 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
       return { t, tx: fromFixed16(a[1]), ty: fromFixed16(a[2]) };
     case MessageType.C_INTENT_INTERACT:
       return { t, targetId: a[1] };
+    case MessageType.C_INTENT_FLAG:
+      return { t, tx: fromFixed16(a[1]), ty: fromFixed16(a[2]) };
     case MessageType.C_PING:
       return { t, clientTime: a[1] };
     case MessageType.C_VIEWPORT:
@@ -125,6 +143,8 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
         serverTime: a[6],
         sessionToken: a[7],
         resumed: a[8],
+        groundY: fromFixed16(a[9]),
+        wrapX: a[10],
       };
     case MessageType.S_SNAPSHOT_FULL:
       return {
@@ -147,6 +167,18 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
       return { t, clientTime: a[1], serverTime: a[2] };
     case MessageType.S_EVENT:
       return { t, name: a[1], payload: a[2] ?? undefined };
+    case MessageType.S_SECTIONS:
+      return {
+        t,
+        sections: (a[1] as number[][]).map((s) => ({
+          id: s[0]!,
+          cap: s[1]!,
+          count: s[2]!,
+          x: fromFixed16(s[3]!),
+          y: fromFixed16(s[4]!),
+          nested: s[5] === 1,
+        })),
+      };
     default:
       throw new Error(`unknown message type: ${String(t)}`);
   }

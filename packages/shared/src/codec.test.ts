@@ -17,6 +17,7 @@ const samples: AnyMessage[] = [
   { t: MessageType.C_HELLO, protocolVersion: 3, displayName: 'phone', sessionToken: 'sess_xyz' },
   { t: MessageType.C_INTENT_MOVE, tx: 123.5, ty: 0.0625 },
   { t: MessageType.C_INTENT_INTERACT, targetId: 1_000_003 },
+  { t: MessageType.C_INTENT_FLAG, tx: 2048, ty: 880 },
   { t: MessageType.C_PING, clientTime: 1_700_000_000 },
   { t: MessageType.C_VIEWPORT, cx: 100, cy: 200, halfW: 50, halfH: 40 },
   {
@@ -25,10 +26,12 @@ const samples: AnyMessage[] = [
     tickHz: 10,
     broadcastHz: 4,
     chunkId: 0,
-    worldBounds: [0, 0, 1024, 1024],
+    worldBounds: [0, 0, 4096, 1024],
     serverTime: 999,
     sessionToken: 'sess_abc',
     resumed: false,
+    groundY: 896,
+    wrapX: true,
   },
   {
     t: MessageType.S_SNAPSHOT_FULL,
@@ -57,6 +60,13 @@ const samples: AnyMessage[] = [
   },
   { t: MessageType.S_PONG, clientTime: 5, serverTime: 7 },
   { t: MessageType.S_EVENT, name: 3, payload: { robotId: 1 } },
+  {
+    t: MessageType.S_SECTIONS,
+    sections: [
+      { id: 0, cap: 12, count: 7, x: 512, y: 476, nested: false },
+      { id: 100, cap: 3, count: 3, x: 512, y: 596, nested: true },
+    ],
+  },
 ];
 
 describe('codec round-trip', () => {

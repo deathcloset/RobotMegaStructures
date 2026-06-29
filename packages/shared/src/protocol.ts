@@ -14,12 +14,31 @@ export enum MessageType {
   C_PING = 3,
   C_VIEWPORT = 4,
   C_INTENT_INTERACT = 5,
+  C_INTENT_FLAG = 6,
   // Server -> Client
   S_WELCOME = 10,
   S_SNAPSHOT_FULL = 11,
   S_SNAPSHOT_DELTA = 12,
   S_PONG = 13,
   S_EVENT = 14,
+  S_SECTIONS = 15,
+}
+
+/** Live state of one zone for the client's zone labels (§4.4). Covers both the ring
+ *  sections AND nested zones — a nested zone is "just another zone with a cap." The
+ *  server sends each zone's label anchor (`x`,`y`) because a nested chamber doesn't
+ *  sit at a section centre, and `nested` so the client styles/encloses it distinctly.
+ *  Sections also vary in OSHA cap, which the client can't infer. */
+export interface SectionInfo {
+  id: number;
+  cap: number;
+  count: number;
+  /** World-space anchor for the floating label (and, for nested zones, the chamber
+   *  centre where occupants gather). */
+  x: number;
+  y: number;
+  /** True for a nested interior chamber (vs a ring section). */
+  nested: boolean;
 }
 
 export interface CHello {
@@ -45,6 +64,14 @@ export interface CIntentInteract {
   t: MessageType.C_INTENT_INTERACT;
   targetId: number;
 }
+/** "Plant (or move) my work-flag here." Rallies the builder crew to work the area
+ *  around the flag (§ Phase 2 crews). One flag per player; tapping your own flag
+ *  picks it up. Y is snapped to the surface server-side. */
+export interface CIntentFlag {
+  t: MessageType.C_INTENT_FLAG;
+  tx: number;
+  ty: number;
+}
 export interface CPing {
   t: MessageType.C_PING;
   clientTime: number;
@@ -66,7 +93,13 @@ export interface SWelcome {
   tickHz: number;
   broadcastHz: number;
   chunkId: number;
+  /** [x0, y0, x1, y1] — now a wide rectangle, not a square (§ Phase 2). */
   worldBounds: WorldBounds;
+  /** Surface line (world Y): sky above, ground below; the structure rises from it. */
+  groundY: number;
+  /** The X axis wraps (cylinder): the client renders the seam seamlessly and the
+   *  camera loops. */
+  wrapX: boolean;
   serverTime: number;
   /** Token to present on a later reconnect to resume this robot (§4.7). Also
    *  signals whether this welcome was a fresh spawn or a resume (see `resumed`). */
@@ -100,7 +133,19 @@ export interface SEvent {
   name: DomainEvent;
   payload?: unknown;
 }
+/** Per-section cap + live occupancy for the client's zone labels (sent globally;
+ *  there are only a handful of sections, so it's tiny). */
+export interface SSections {
+  t: MessageType.S_SECTIONS;
+  sections: SectionInfo[];
+}
 
-export type ClientMessage = CHello | CIntentMove | CPing | CViewport | CIntentInteract;
-export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent;
+export type ClientMessage =
+  | CHello
+  | CIntentMove
+  | CPing
+  | CViewport
+  | CIntentInteract
+  | CIntentFlag;
+export type ServerMessage = SWelcome | SSnapshotFull | SSnapshotDelta | SPong | SEvent | SSections;
 export type AnyMessage = ClientMessage | ServerMessage;

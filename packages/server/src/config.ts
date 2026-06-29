@@ -18,6 +18,13 @@ export interface ServerConfig {
   jitterMs: number;
   seedRobots: number;
   seedBuilders: number;
+  seedMiners: number;
+  /** OSHA cap: max robots allowed in one section before the checkpoint queues (§4.4).
+   *  Keep it comfortably above SEED_ROBOTS so each section leaves room for players. */
+  sectionCapacity: number;
+  /** Hard cap of the nested zone — a capped interior chamber you opt into (§4.4). Set
+   *  it low (2–3) to feel the queue at its gate. A resident crew fills cap−1 slots. */
+  nestedZoneCap: number;
   metricsLogMs: number;
   gracePeriodMs: number;
 }
@@ -51,6 +58,9 @@ export function loadConfig(): ServerConfig {
     jitterMs: num('JITTER_MS', 0),
     seedRobots: num('SEED_ROBOTS', 8),
     seedBuilders: num('SEED_BUILDERS', 5),
+    seedMiners: num('SEED_MINERS', 2),
+    sectionCapacity: num('SECTION_CAPACITY', 12),
+    nestedZoneCap: num('NESTED_ZONE_CAP', 3),
     metricsLogMs: num('METRICS_LOG_MS', 5000),
     gracePeriodMs: num('GRACE_PERIOD_MS', DEFAULT_GRACE_PERIOD_MS),
   };

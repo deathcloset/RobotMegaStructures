@@ -1,17 +1,25 @@
 # Handoff — pick up here
 
-## Where we are: **v0.2.0 "First Bolt" 🔩** — Phase 1 complete & merged to `main`
+## Where we are: **v0.3.0 "Full House" 🏟️** — Phase 2 milestone on `main`
 
-A real build loop on the authoritative server: robots haul from depots to a ghost
-blueprint and place pieces; the top row is **two-robot weld** pieces (holder +
-welder, player *or* AI bot); **autonomous builder bots** keep the site bustling;
-contracts **loop**; and dropped phones **reconnect and resume the same robot**
-(§4.7). Phase 0 (`v0.1.0`) and Phase 1 (`v0.2.0`) are both on **`main`**. Proven
-live with 3 players (two phones + a PC). Longer-horizon ideas live in
+The planet scaled up. A **wrapping ring of numbered sections** (the chunk grid) with
+per-viewport interest (an **8.5×** egress cut, flat as the world grows), **OSHA caps +
+checkpoints** that throttle the bot swarm while never walling a human, **roaming work
+crews** drawn to a rotating hot zone (queues that form *and* drain — bots give up after a
+bounded wait), **varied-cap zones** with live floating labels, and **nested zones** —
+capped interior chambers you opt into through a gate. Plus the gameplay: **surface
+mining**, **commandable crews** (work-flags), the two-robot **weld**, looping contracts,
+reconnect-resume (§4.7), and the surface/sky aesthetic. Phases 0–2 (`v0.1.0`–`v0.3.0`)
+are all on **`main`**; the chunk grid + `settle` handoff are the proven seam for
+multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live in
 [`IDEAS.md`](./IDEAS.md) (fuel, not roadmap — §2.5).
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
+- **In flight (branch `claude/dreamy-newton-1rj5p1`, new PR — not yet on `main`):**
+  Phase 2 continued — a real **worksite inside the nested vault** (a reason to enter),
+  then a dedicated **delivery-swarm** robot type (set-and-forget cross-section ferrying).
+  See CHANGELOG "Unreleased".
 
 ## Run / operate
 
@@ -28,11 +36,13 @@ now that Phase 1 is on `main`, switch it back to `main` (`git checkout main`) so
 
 ## Architecture in a nutshell
 
-- `packages/shared` — wire protocol + codec + fixed-point. **Change here = rebuild
-  all three.** Bump `PROTOCOL_VERSION` on any protocol change.
-- `packages/server` — `SimLoop` (tick), `Chunk` (actor-shaped, the one mutation
-  entry is `applyIntent`), `Snapshotter` (full/delta), `WsGateway`, `Metrics`.
-  In-memory; `state/repository.ts` is the seam for Valkey/Postgres.
+- `packages/shared` — wire protocol + codec + fixed-point + **cylinder wrap math
+  (`world.ts`)**. **Change here = rebuild all three.** Bump `PROTOCOL_VERSION` on
+  any protocol change.
+- `packages/server` — `SimLoop` (tick), `ChunkRegistry` (the **section grid** + the
+  routing/interest/handoff indirection), `Chunk` (actor-shaped, one section, the one
+  mutation entry is `applyIntent`), `Snapshotter` (full/delta), `WsGateway`,
+  `Metrics`. In-memory; `state/repository.ts` is the seam for Valkey/Postgres.
 - `packages/client` — PixiJS; `EntityStore` + `interpolate` (smooths snapshots),
   `Camera`, `Input`, `Hud`.
 - `packages/bot` — headless load/lag harness.
@@ -66,35 +76,87 @@ in `Chunk` (`driveBuilder`, `advanceWelds`); piece weld state in `Piece`.
 ## Next up: **Phase 2** — the world gets big (Ben's steer, 2026-06-20)
 
 The fun is proven; now grow the world. Ben's direction (don't lose it):
-- **Side-scrolling landscape** extending far left/right that **wraps** (a circular
-  planet you can walk all the way around — Terraria/Starbound/Mario feel), the
-  megastructure rising up and up. Lay the **aesthetic** down early.
-- **Surface-resource search + digging/mining** — a real way to source materials
-  from the planet (depots become a starting convenience, not the whole story).
-- **Commandable AI crews / swarms** (builders are the seed) + a **delivery-swarm**
-  robot type — set-and-forget far journeys that still need coordination.
-- See [`IDEAS.md`](./IDEAS.md) for the longer arc (living/maintenance hosting of
-  finished structures, the megastructures game-set, optional robot personalities).
+- ✅ **Side-scrolling landscape that wraps** (slice 1, this branch) — a circular
+  planet you can walk all the way around, the megastructure rising from the
+  surface. Aesthetic laid down early (sky/atmosphere/ground/parallax).
+- ✅ **Surface-resource search + digging/mining** (slice 2, this branch) — renewable
+  ore veins scattered around the planet; an empty-handed robot digs one for a load
+  that feeds the build loop. Depots are now the convenient starter, veins the wider
+  story, and a share of builders (`SEED_MINERS`) are **prospectors** that mine on
+  their own. (Eventually: below-surface digging.)
+- ✅ **Commandable AI crews** (slice 3, this branch) — long-press plants a
+  **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
+  mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
+  **delivery-swarm** robot type for set-and-forget far ferrying.
+- ✅ **Chunk grid + OSHA handoff + nested zones** (slices 4–7, this branch) — the planet
+  is a ring of **numbered zones**; interest is per-viewport (8.5× egress cut measured);
+  robots hand off across boundaries; **caps vary** per zone, each shows a live `count/cap`
+  label, **roaming work crews** make checkpoints visibly queue, and **players queue
+  briefly** at a full ring zone but are force-admitted (felt, never walled). **Nested
+  zones** add a capped interior **chamber** you opt into through a gate — a hard cap
+  (queue at the gate, or walk on by) (§4.4).
+  **Next:** real multi-server distribution (IDEAS.md "Distributed hosting" — Ben's vision:
+  sections across small boxes; the `settle` handoff + cap are the seam).
+- See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
+  living/maintenance hosting of finished structures, the megastructures game-set).
 
-**This is the chunk/AOI moment.** The world stops being one 1024² chunk; design
-doc §4.3 (chunk grid + interest management) and §4.4 (the OSHA cap = sharding
-boundary) finally earn their keep. Concrete first seams to lean on / extend:
-- `ChunkRegistry` is the one indirection between "one chunk" and "many" — grow it
-  to a grid; keep `Chunk` an isolated message-in/state-out unit (the Elixir port
-  hedge, §5.4).
-- The viewport **AOI filter** (`broadcast/interest.ts`) already filters by the
-  client's reported viewport — multi-chunk becomes "iterate chunks overlapping the
-  viewport," and **egress per client stays flat as the world grows** (the whole
-  §7 bandwidth case — keep watching `bytes_per_player_per_tick`).
-- World coords are fixed-point on the wire; a wrapping X axis means deciding the
-  wrap math once (server-authoritative) and the camera's wrap rendering.
-- Mining wants a new `EntityKind` (ore/deposit) + an intent, slotting into the
-  same `applyIntent` chokepoint and entity-neutral snapshot path.
+**What slice 1 settled (build on it, don't redo it):**
+- **The wrap math is decided once** in `shared/world.ts` (`wrapX`, `wrapDeltaX`,
+  `wrappedDistance`), server-authoritative and mirrored by the camera/renderer.
+  Anything spatial that subtracts two X values must go through `wrapDeltaX`.
+- **AOI is wrap-ready.** `broadcast/interest.ts` measures X the short way around
+  the cylinder, so multi-chunk is still just "iterate chunks overlapping the
+  viewport," and **egress per client stays flat as the world grows** (keep watching
+  `bytes_per_player_per_tick`). The world geometry rides `S_WELCOME` (v5).
 
-**Watch out:** Phase 0/1 assume a single `WORLD_SIZE` square and `CHUNK_ID = 0`
-(see `shared/constants.ts`, `ChunkRegistry`). Generalizing those is the first real
-task. Two-rate loop, codec, interpolation, resilience, and the build/weld
-mechanics all carry over unchanged.
+**What slices 4–5 built (the grid + checkpoint are real).** The world is a ring of
+`CHUNK_COLS` sections; `ChunkRegistry` is the grid + the routing/interest/handoff
+indirection (`chunkAt`, `chunksInView`, `settle`, `spawnSection`). `SimLoop` snapshots
+each section once and each client gathers only the sections overlapping its viewport.
+Each `Chunk` owns a world-X slice (`x0..x1`, `centerX`) + a `capacity`/`isFull`, but
+still simulates in world coords with the global wrap, so it stays an isolated
+message-in/state-out unit (the Elixir/multi-box port hedge, §5.4). `settle(now)`
+enforces the OSHA cap (holds robots at full checkpoints, counts admissions so a burst
+can't overfill) and returns the per-player nudges the gateway delivers as
+`SectionFull`. Mining (slice 2) is the worked example for adding new `EntityKind`s
+through the one `applyIntent` chokepoint — copy that shape.
+
+**Next: distribution (and rough edges to polish).**
+- **Nested zones (built, slice 7):** a `NestedZone` owned by its parent `Chunk` — a capped
+  interior **chamber** with a gate (`EntityKind.Gate`) on the surface. Entry is opt-in
+  (tap the gate → `pendingAction: 'enter'` → walk to it → ascend into the chamber) and the
+  cap is **hard** (no force-admit — the opposite of the ring checkpoints, since entry is a
+  choice). Occupants stay in the parent's `robots` map (still simulated), flagged
+  `Robot.insideZone` + lifted into the chamber, and ride the same `S_SECTIONS` list (now
+  with `x`/`y`/`nested`). Seeded in `index.ts` §1 with `NESTED_ZONE_CAP` (geometry
+  constants `NESTED_ZONE_*` in shared; the section + id bases are in `index.ts`). Future
+  for it: NPC builders/crews actually **working** inside a chamber (it has no worksite of
+  its own yet — residents just hold slots), multiple nested zones / named vaults, and
+  literal walk-*around* collision (today traversers pass underneath, which reads fine).
+- **Multi-server:** the same `settle` handoff becomes a *network* handoff; `ChunkRegistry`
+  becomes the seam where a section is owned by another process/box, coordinated over
+  Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).
+  Don't build it until there's a second box to host (no consumer yet, §2.5).
+- **Checkpoint dynamics (tunables):** wanderers roam + builder crews migrate (drawn to a
+  clock-derived rotating hot section), so checkpoints fill and queue in waves; **players
+  queue briefly then are force-admitted** (`MAX_PLAYER_WAIT_MS` in `ChunkRegistry.ts`),
+  so a tight zone is felt but never walls a human. **Bots that queue past
+  `BOT_QUEUE_PATIENCE_MS` (5 s) give up and turn back into their own section** — the
+  release valve that stops mutually-full sections from deadlocking (queues stay lively
+  but drain in waves; the `queued` gauge rises and falls rather than climbing to a frozen
+  plateau). Caps **vary per zone** (`CAP_MULT` + `MIN_SECTION_CAP` in `index.ts`, anchored
+  to `SECTION_CAPACITY`) and each section's crew scales to its cap (`pop = capacity − 3`).
+  Other knobs: `Chunk.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued`
+  gauge in the metrics log.
+
+**Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
+(`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids
+`0..CHUNK_COLS-1`). A `Chunk`'s `width` is the **global** circumference (wrap), not
+its section width; `x0..x1` is its slice. Work-flags are kept inside their section
+and clear on a cross-boundary handoff (a known rough edge to revisit with the real
+checkpoint). The zoom-out floor is capped at one lap (camera `minScale`) — a taller
+world that wraps will want render-side tiling. Two-rate loop, codec, interpolation,
+resilience, and build/weld/mining/crew mechanics all carry over unchanged.
 
 ## Gotchas we learned (don't re-discover these)
 
@@ -108,3 +170,7 @@ mechanics all carry over unchanged.
   delta path silently drops a `status` flip on a static entity (e.g. a piece
   going ghost → placed). The Snapshotter restates an entity whose `status`
   changed in `added`; remember this when adding any future per-entity state.
+- **Seam interpolation.** The client unwraps wrapped server X into a *continuous*
+  coordinate before interpolating (`EntityStore`); otherwise a robot crossing the
+  seam (x≈width → x≈0) lerps backwards across the whole world. The renderer then
+  wraps that continuous X to the copy nearest the camera (`Stage.wrapNear`).

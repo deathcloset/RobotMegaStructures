@@ -2,9 +2,10 @@ import {
   type AnyMessage,
   decodeMessage,
   encodeMessage,
+  GROUND_Y,
   MessageType,
   PROTOCOL_VERSION,
-  WORLD_SIZE,
+  WORLD_WIDTH,
 } from '@rms/shared';
 import { WebSocket } from 'ws';
 
@@ -26,8 +27,8 @@ export class BotClient {
   readonly stats: BotStats = { connected: false, bytesIn: 0, snapshots: 0, errors: 0 };
   private robotId: number | null = null;
   private moveTimer: NodeJS.Timeout | null = null;
-  private targetX = Math.random() * WORLD_SIZE;
-  private targetY = Math.random() * WORLD_SIZE;
+  private targetX = Math.random() * WORLD_WIDTH;
+  private targetY = Math.random() * GROUND_Y;
 
   constructor(
     private readonly url: string,
@@ -79,8 +80,8 @@ export class BotClient {
   private tickMove(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.robotId === null) return;
     if (Math.random() < 0.25) {
-      this.targetX = Math.random() * WORLD_SIZE;
-      this.targetY = Math.random() * WORLD_SIZE;
+      this.targetX = Math.random() * WORLD_WIDTH;
+      this.targetY = Math.random() * GROUND_Y;
     }
     this.sendRaw({ t: MessageType.C_INTENT_MOVE, tx: this.targetX, ty: this.targetY });
   }

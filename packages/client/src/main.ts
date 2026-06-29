@@ -1,5 +1,7 @@
 import {
   type AnyMessage,
+  CHUNK_COLS,
+  chunkColOf,
   DEFAULT_INTERP_DELAY_MS,
   DomainEvent,
   EntityKind,
@@ -7,6 +9,7 @@ import {
   PieceStatus,
   PROTOCOL_VERSION,
   RobotStatusBit,
+  wrapDeltaX,
 } from '@rms/shared';
 import { Hud } from './hud/Hud';
 import { Input } from './input/Input';
@@ -38,6 +41,7 @@ const reconnectEl = document.getElementById('reconnect');
 
 let camera: Camera;
 let myRobotId: number | null = null;
+let worldWidth = 0; // circumference (from welcome); enables wrap-aware tapping
 let sessionToken: string | undefined = loadToken();
 let lastViewportSent = 0;
 let lastPingAt = 0;
@@ -61,7 +65,7 @@ async function main(): Promise<void> {
   await stage.init(document.getElementById('app')!);
   camera = new Camera(stage.screen.w, stage.screen.h);
 
-  new Input(stage.canvas, camera, { onTap });
+  new Input(stage.canvas, camera, { onTap, onLongPress });
 
   // (Re)connect → say hello, presenting our token so the server resumes our robot.
   conn.onOpen = () =>
@@ -84,18 +88,23 @@ async function main(): Promise<void> {
 
 function onMessage(msg: AnyMessage): void {
   switch (msg.t) {
-    case MessageType.S_WELCOME:
+    case MessageType.S_WELCOME: {
       myRobotId = msg.yourRobotId;
       sessionToken = msg.sessionToken;
       saveToken(sessionToken);
+      const [x0, , x1] = msg.worldBounds;
+      worldWidth = x1 - x0;
       stage.setMyRobot(msg.yourRobotId);
-      stage.setWorldSize(msg.worldBounds[2]);
-      // Only re-centre on a fresh spawn — a resume keeps the player's camera.
+      stage.setWorld(worldWidth, msg.groundY);
+      camera.setWorldWidth(worldWidth);
+      store.setWorldWidth(worldWidth);
+      // Only re-frame on a fresh spawn — a resume keeps the player's camera.
       if (!msg.resumed) {
-        camera.x = msg.worldBounds[2] / 2;
-        camera.y = msg.worldBounds[3] / 2;
+        camera.x = (x0 + x1) / 2; // the structure rises from the middle of the planet
+        camera.y = msg.groundY - 200; // surface low in frame, sky above
       }
       break;
+    }
     case MessageType.S_SNAPSHOT_FULL:
       store.upsertFull(msg.entities, msg.serverTime);
       newestServerTime = Math.max(newestServerTime, msg.serverTime);
@@ -112,6 +121,9 @@ function onMessage(msg: AnyMessage): void {
     case MessageType.S_EVENT:
       onEvent(msg.name, msg.payload);
       break;
+    case MessageType.S_SECTIONS:
+      stage.setSections(msg.sections);
+      break;
   }
 }
 
@@ -120,6 +132,9 @@ function onEvent(name: DomainEvent, _payload: unknown): void {
     showBanner('Contract complete! 🎉  Next blueprint incoming…', 6000);
   } else if (name === DomainEvent.ContractStarted) {
     showBanner('New contract — build! 🏗️', 4000);
+  } else if (name === DomainEvent.SectionFull) {
+    // Queued at a full checkpoint — brief; you're force-admitted within a few seconds.
+    showBanner('🦺 Section full — waiting at the checkpoint…', 2000);
   }
 }
 
@@ -135,7 +150,10 @@ function onTap(x: number, y: number): void {
   let bestDist = TAP_PICK_RANGE;
   for (const e of rendered) {
     if (!actionable(e, carrying)) continue;
-    const d = Math.hypot(e.x - x, e.y - y);
+    // Measure X the short way around the cylinder so a tap near the seam still
+    // grabs the entity on the other side of the wrap.
+    const dx = worldWidth > 0 ? wrapDeltaX(e.x, x, worldWidth) : e.x - x;
+    const d = Math.hypot(dx, e.y - y);
     if (d <= bestDist) {
       best = e;
       bestDist = d;
@@ -148,9 +166,17 @@ function onTap(x: number, y: number): void {
   }
 }
 
+/** Plant (or move) the work-flag, rallying the builder crew to that area. */
+function onLongPress(x: number, y: number): void {
+  conn.send({ t: MessageType.C_INTENT_FLAG, tx: x, ty: y });
+}
+
 /** Can this robot act on entity `e` right now, given whether it's carrying? */
 function actionable(e: RenderEntity, carrying: boolean): boolean {
   if (e.kind === EntityKind.Resource) return !carrying; // grab from a depot
+  if (e.kind === EntityKind.Deposit) return !carrying && e.status > 0; // mine an ore vein
+  if (e.kind === EntityKind.Flag) return e.status === myRobotId; // tap your own flag to pick it up
+  if (e.kind === EntityKind.Gate) return true; // tap a nested zone's gate to enter / leave
   if (e.kind === EntityKind.Piece) return carrying && e.status === PieceStatus.Ghost; // deliver
   if (e.kind === EntityKind.WeldPiece) {
     if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)
@@ -260,9 +286,11 @@ function updateHud(nowPerf: number): void {
     total += 1;
     if (e.status === PieceStatus.Placed) placed += 1;
   }
+  const me = myRobotId === null ? undefined : rendered.find((e) => e.id === myRobotId);
   hud.set({
     status: conn.status,
     robot: myRobotId ?? '—',
+    zone: me ? `${chunkColOf(me.x) + 1}/${CHUNK_COLS}` : '—',
     rtt_ms: Math.round(clock.rtt),
     interp_ms: interpDelayMs,
     lag_inj: lagMs ? `${lagMs}±${jitterMs}ms` : 'off',
