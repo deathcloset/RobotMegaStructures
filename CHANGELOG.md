@@ -20,8 +20,33 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ## Unreleased — Phase 2, continued 🚧
 
-Building on the v0.3.0 architecture (most recent first). Up next: a real worksite
-inside the nested **vault**, then a dedicated **delivery-swarm** robot type.
+Building on the v0.3.0 architecture (most recent first). Up next: a dedicated
+**delivery-swarm** robot type.
+
+### Slice 8 — the vault worksite 🏗️
+
+The nested **vault** (v0.3.0) gets a **reason to enter**: its own interior **contract**.
+A small row of ghost pieces + a depot float up in the chamber; the resident crew builds
+them and a visiting player can join in — all without touching the section's contract on
+the floor outside.
+
+- **Zone-scoped build loop** (server-only): pieces and depots carry an internal `zoneId`.
+  A crew *inside* the vault builds only the vault's ghosts from the vault's depot; a crew
+  on the section floor builds only the section contract and ignores the chamber. Welds,
+  work-flags, and prospecting stay section-floor concerns.
+- **Doesn't stall the section**: vault pieces are counted separately, so the section
+  contract completes + loops on its own even if nobody ever enters the vault.
+- **The vault loops on its own** (`advanceVaults`, faster than the section): once its
+  ghosts are built it holds a brief beat, then resets — so the chamber is always a living
+  worksite with a fresh window to help. The resident crew are now builders.
+- **No protocol change** (still v10): vault pieces/depot ride the existing entity path as
+  ordinary pieces/resources at chamber positions; `zoneId` is server-internal.
+- **Proven**: unit (94 tests, +6) — a player enters and builds the vault piece without
+  leaving or touching the section contract, a resident builds it autonomously, an outside
+  builder ignores the vault, the section completes without the vault, the vault loops
+  (rebuilds after a beat), and tapping floor work leaves the chamber. Wire (live server):
+  the resident crew built the chamber's 3 interior pieces while the six section contracts
+  progressed independently.
 
 ---
 

@@ -12,6 +12,9 @@ export class Resource {
   readonly stableId: string;
   readonly x: number;
   readonly y: number;
+  /** The nested zone (§4.4) this depot serves, or null for a section depot. A vault
+   *  depot is reachable/used only inside that chamber; server-internal (not on wire). */
+  zoneId: number | null = null;
 
   constructor(id: number, stableId: string, x: number, y: number) {
     this.id = id;

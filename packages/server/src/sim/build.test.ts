@@ -514,3 +514,130 @@ describe('nested zones — capped interior chambers (§4.4)', () => {
     expect(gateOf()).toMatchObject({ kind: EntityKind.Gate, status: 1 }); // full
   });
 });
+
+describe('vault worksite — a reason to enter (§4.4)', () => {
+  const GATE = 5_000_000;
+  // A chunk with a nested vault that has its own interior worksite (a ghost + a depot in
+  // the chamber, tagged with the zone id) plus a section ghost + depot on the floor.
+  function withVault(cap = 3) {
+    const chunk = new Chunk(0);
+    const zone = new NestedZone(100, 0, cap, 200, 500, GATE, 200, 800);
+    chunk.addZone(zone);
+    const vaultGhost = new Piece(1_000_900, 'vg', 200, 500, false);
+    vaultGhost.zoneId = 100;
+    chunk.addPiece(vaultGhost);
+    const vaultDepot = new Resource(2_000_900, 'vd', 200, 520);
+    vaultDepot.zoneId = 100;
+    chunk.addResource(vaultDepot);
+    const sectionGhost = new Piece(1_000_001, 'sg', 320, 820, false);
+    chunk.addPiece(sectionGhost);
+    const sectionDepot = new Resource(2_000_001, 'sd', 300, 820);
+    chunk.addResource(sectionDepot);
+    chunk.drainEvents();
+    return { chunk, zone, vaultGhost, sectionGhost };
+  }
+  // Autonomous NPC builders dawdle on sim time, so advance `now` like the real loop.
+  function autorun(chunk: Chunk, done: () => boolean, max = 500): void {
+    let now = 0;
+    for (let i = 0; i < max && !done(); i++) {
+      now += 100;
+      chunk.step(0.1, now);
+    }
+  }
+
+  it('a player enters and builds the vault piece — without leaving, without touching the section contract', () => {
+    const { chunk, vaultGhost, sectionGhost } = withVault(3);
+    const p = new Robot(1, 'p', 200, 800, false, 1);
+    chunk.addOccupant(p);
+
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null, 120);
+    expect(p.insideZone).toBe(100);
+
+    chunk.applyIntent(1, interact(2_000_900)); // grab from the vault's own depot
+    run(chunk, () => p.carrying, 120);
+    expect(p.insideZone).toBe(100); // tapping the vault's depot kept us inside
+    chunk.applyIntent(1, interact(1_000_900)); // deliver to the vault ghost
+    run(chunk, () => vaultGhost.status === PieceStatus.Placed, 120);
+
+    expect(vaultGhost.status).toBe(PieceStatus.Placed);
+    expect(p.insideZone).toBe(100); // still inside after building
+    expect(sectionGhost.status).toBe(PieceStatus.Ghost); // section contract untouched
+  });
+
+  it('a resident builder builds the vault contract on its own and never leaves', () => {
+    const { chunk, zone, vaultGhost } = withVault(3);
+    const r = new Robot(-1, 'r', 200, 500, true);
+    r.isBuilder = true;
+    r.insideZone = 100;
+    chunk.addOccupant(r);
+    zone.occupants.add(-1);
+
+    autorun(chunk, () => vaultGhost.status === PieceStatus.Placed);
+    expect(vaultGhost.status).toBe(PieceStatus.Placed);
+    expect(r.insideZone).toBe(100); // stayed in the chamber the whole time
+  });
+
+  it('an outside builder builds the section contract only — it ignores the vault interior', () => {
+    const { chunk, vaultGhost, sectionGhost } = withVault(3);
+    const b = new Robot(-1, 'b', 320, 820, true);
+    b.isBuilder = true;
+    chunk.addOccupant(b);
+
+    autorun(chunk, () => sectionGhost.status === PieceStatus.Placed);
+    expect(sectionGhost.status).toBe(PieceStatus.Placed);
+    expect(vaultGhost.status).toBe(PieceStatus.Ghost); // never touched the vault
+  });
+
+  it('the section contract completes without the vault piece (the vault never stalls it)', () => {
+    const { chunk, vaultGhost } = withVault(3);
+    const b = new Robot(-1, 'b', 320, 820, true);
+    b.isBuilder = true;
+    chunk.addOccupant(b);
+
+    let completed = false;
+    let now = 0;
+    for (let i = 0; i < 500 && !completed; i++) {
+      now += 100;
+      chunk.step(0.1, now);
+      for (const e of chunk.drainEvents()) {
+        if (e.name === DomainEvent.ContractCompleted) completed = true;
+      }
+    }
+    expect(completed).toBe(true); // finished with only its own (section) piece
+    expect(vaultGhost.status).toBe(PieceStatus.Ghost); // the unbuilt vault didn't block it
+  });
+
+  it('tapping section-floor work from inside the vault leaves the chamber', () => {
+    const { chunk, zone } = withVault(3);
+    const p = new Robot(1, 'p', 200, 800, false, 1);
+    chunk.addOccupant(p);
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null, 120);
+    expect(p.insideZone).toBe(100);
+
+    chunk.applyIntent(1, interact(2_000_001)); // tap a section depot (a different zone)
+    expect(p.insideZone).toBeNull(); // left the chamber to go work the floor
+    expect(zone.count).toBe(0);
+  });
+
+  it('loops the vault contract on its own — it rebuilds to fresh ghosts after a beat', () => {
+    const { chunk, vaultGhost } = withVault(3);
+    const r = new Robot(-1, 'r', 200, 500, true);
+    r.isBuilder = true;
+    r.insideZone = 100;
+    chunk.addOccupant(r);
+
+    let wasBuilt = false;
+    let sawReset = false;
+    let now = 0;
+    for (let i = 0; i < 250; i++) {
+      now += 100;
+      chunk.step(0.1, now);
+      if (vaultGhost.status === PieceStatus.Placed) wasBuilt = true;
+      if (wasBuilt && vaultGhost.status === PieceStatus.Ghost) sawReset = true;
+    }
+    expect(wasBuilt).toBe(true); // the resident built it
+    expect(sawReset).toBe(true); // …and it looped back to a ghost (independent of the section)
+  });
+});

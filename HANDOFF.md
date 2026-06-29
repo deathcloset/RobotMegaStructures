@@ -17,9 +17,11 @@ multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live i
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
 - **In flight (branch `claude/dreamy-newton-1rj5p1`, new PR — not yet on `main`):**
-  Phase 2 continued — a real **worksite inside the nested vault** (a reason to enter),
-  then a dedicated **delivery-swarm** robot type (set-and-forget cross-section ferrying).
-  See CHANGELOG "Unreleased".
+  Phase 2 continued — **slice 8: the vault worksite** (the nested vault now has its own
+  interior contract a resident crew builds and a player can join; it loops on its own,
+  zone-scoped so section crews ignore it — pieces/depots carry an internal `zoneId`). Up
+  next: a dedicated **delivery-swarm** robot type (set-and-forget cross-section
+  ferrying). See CHANGELOG "Unreleased".
 
 ## Run / operate
 

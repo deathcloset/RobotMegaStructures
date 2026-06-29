@@ -13,7 +13,7 @@ import { log } from './log';
 import { Metrics } from './metrics/Metrics';
 import { handleMetrics } from './metrics/metricsServer';
 import { WsGateway } from './net/WsGateway';
-import { seedContract } from './sim/blueprint';
+import { seedContract, seedVaultWorksite } from './sim/blueprint';
 import type { Chunk } from './sim/Chunk';
 import { ChunkRegistry } from './sim/ChunkRegistry';
 import { NestedZone } from './sim/NestedZone';
@@ -135,8 +135,9 @@ function seedRobots(chunk: Chunk): void {
 }
 
 /** Seed a nested zone into a parent section: an elevated capped chamber with a gate
- *  on the surface, plus a small resident crew (cap − 1, clamped) so a lone visitor
- *  takes the last slot and a second one queues at the gate. */
+ *  on the surface, its own interior worksite (a reason to enter), and a small resident
+ *  crew (cap − 1, clamped) that builds it — so a lone visitor takes the last slot and
+ *  a second one queues at the gate. */
 function seedNestedZone(parent: Chunk, cap: number): void {
   const zone = new NestedZone(
     NESTED_ZONE_ID,
@@ -149,6 +150,7 @@ function seedNestedZone(parent: Chunk, cap: number): void {
     parent.groundY - 18, // the gate stands on the surface below
   );
   parent.addZone(zone);
+  seedVaultWorksite(parent, zone, repo); // ghosts + a depot inside the chamber
   const residents = Math.max(0, Math.min(cap - 1, 4));
   for (let i = 0; i < residents; i++) {
     nextNpcId += 1;
@@ -159,7 +161,9 @@ function seedNestedZone(parent: Chunk, cap: number): void {
       zone.y,
       true,
     );
-    r.insideZone = zone.id; // a resident worker living in the chamber
+    r.insideZone = zone.id; // a resident worker living in the chamber…
+    r.isBuilder = true; // …who builds the vault's interior contract
+    r.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
     parent.addOccupant(r);
     zone.occupants.add(r.id);
   }

@@ -43,6 +43,11 @@ const RELOCATE_SPAN_MS = 15_000;
 const HOT_PERIOD_MS = 30_000;
 const HOT_BIAS = 0.4; // fraction of relocations that head for the hot section
 
+/** A nested vault's interior contract loops on its own this long after it's finished
+ *  (a brief "done" beat), faster than the section contract — so the chamber stays a
+ *  living worksite and a visiting player always finds something to build. */
+const VAULT_REBUILD_MS = 8000;
+
 export interface ChunkEvent {
   name: DomainEvent;
   payload?: unknown;
@@ -214,9 +219,10 @@ export class Chunk {
     return this.robots.size;
   }
 
-  /** Contract progress (§3) — pieces placed of the blueprint total. */
+  /** Contract progress (§3) — pieces placed of the blueprint total (section contract;
+   *  a nested vault's interior pieces are counted separately). */
   get pieceCount(): number {
-    return this.pieces.size;
+    return this.sectionPieceTotal;
   }
   get placedCount(): number {
     return this.placed;
@@ -274,9 +280,12 @@ export class Chunk {
       }
       return;
     }
-    // Any other interaction means heading off to work — leave the chamber first so
-    // the slot frees the moment you decide to go do something else.
-    this.leaveZone(robot);
+    // Tapping the vault's OWN depot/ghosts keeps you inside to work it; tapping
+    // anything in another zone (or out on the section floor) means you're leaving, so
+    // the chamber slot frees.
+    const targetZone =
+      this.pieces.get(targetId)?.zoneId ?? this.resources.get(targetId)?.zoneId ?? null;
+    if (robot.insideZone !== targetZone) this.leaveZone(robot);
     if (!robot.carrying) {
       const res = this.resources.get(targetId);
       if (res) {
@@ -322,9 +331,13 @@ export class Chunk {
       }
       robot.step(dt, this.width);
       if (robot.isNpc) {
-        if (robot.insideZone !== null) {
-          // A resident worker of a nested chamber: hold inside, don't wander out.
-        } else if (robot.isBuilder) this.driveBuilder(robot, now);
+        // Builders run the build loop (zone-scoped: a vault crew builds the chamber's
+        // interior contract, a section crew builds the floor). Non-builders inside a
+        // chamber just hold; outside, they wander the whole planet.
+        if (robot.isBuilder) this.driveBuilder(robot, now);
+        else if (robot.insideZone !== null) {
+          // A non-builder resident of a chamber: hold inside, don't wander out.
+        }
         // Wanderers roam the WHOLE planet (across sections), so bots flow through
         // checkpoints and queue at busy ones — the section caps come alive (§4.4). A
         // bot that queues too long gives up and turns back (ChunkRegistry.settle), so
@@ -382,13 +395,30 @@ export class Chunk {
       }
     }
 
-    const weldNeedingPartner = this.nearestReservedWeld(robot.x, robot.y, robot.id);
-    if (weldNeedingPartner) {
-      robot.setTarget(weldNeedingPartner.x, weldNeedingPartner.y);
-      robot.pendingAction = { kind: 'weld', targetId: weldNeedingPartner.id };
-      return;
+    // A vault crew (inside a chamber) works ONLY that chamber's interior contract —
+    // haul its depot to its ghosts. Welds, work-flags, and prospecting are all
+    // section-floor concerns, so they're skipped for a vault builder.
+    const zone = robot.insideZone;
+    if (zone === null) {
+      const weldNeedingPartner = this.nearestReservedWeld(robot.x, robot.y, robot.id);
+      if (weldNeedingPartner) {
+        robot.setTarget(weldNeedingPartner.x, weldNeedingPartner.y);
+        robot.pendingAction = { kind: 'weld', targetId: weldNeedingPartner.id };
+        return;
+      }
     }
     if (!robot.carrying) {
+      if (zone !== null) {
+        // Inside a vault: grab from the chamber's own depot.
+        const depot = this.nearestResource(robot.x, robot.y, zone);
+        if (depot) {
+          robot.setTarget(depot.x, depot.y);
+          robot.pendingAction = { kind: 'pickup', targetId: depot.id };
+        } else {
+          robot.nextActionAt = now + 1000;
+        }
+        return;
+      }
       // A work-flag rallies the whole crew: mine the nearest vein to the flag,
       // hauling back to the structure — the commandable-crew lever (§ Phase 2).
       const flag = this.nearestFlag(robot.x, robot.y);
@@ -403,7 +433,7 @@ export class Chunk {
       // No flag (or no vein near it): prospectors mine, other builders use the
       // convenient depots — each falls back to the other so none is stuck empty.
       const vein = this.nearestDeposit(robot.x, robot.y);
-      const depot = this.nearestResource(robot.x, robot.y);
+      const depot = this.nearestResource(robot.x, robot.y, null);
       const mine = robot.prefersMining ? vein : null;
       if (mine) {
         robot.setTarget(mine.x, mine.y);
@@ -416,7 +446,7 @@ export class Chunk {
         robot.pendingAction = { kind: 'mine', targetId: vein.id };
       }
     } else {
-      const ghost = this.nearestGhost(robot.x, robot.y);
+      const ghost = this.nearestGhost(robot.x, robot.y, zone);
       if (ghost) {
         robot.setTarget(ghost.x, ghost.y);
         robot.pendingAction = { kind: 'deliver', targetId: ghost.id };
@@ -584,47 +614,86 @@ export class Chunk {
     piece.holderId = null;
     piece.welderId = null;
     piece.weldDoneAt = null;
-    this.recordPlacement(piece.id);
+    this.recordPlacement(piece);
   }
 
   private placePiece(piece: Piece, robot: Robot): void {
     piece.status = PieceStatus.Placed;
     robot.carrying = false;
-    this.recordPlacement(piece.id);
+    this.recordPlacement(piece);
   }
 
-  private recordPlacement(pieceId: number): void {
+  private recordPlacement(piece: Piece): void {
+    // A nested vault's interior piece is built for its own sake — it doesn't advance
+    // the section's contract (which would otherwise stall waiting on the chamber).
+    if (piece.zoneId !== null) return;
     this.placed += 1;
     this.events.push({
       name: DomainEvent.PiecePlaced,
-      payload: { pieceId, placed: this.placed, total: this.pieces.size },
+      payload: { pieceId: piece.id, placed: this.placed, total: this.sectionPieceTotal },
     });
     this.checkContractComplete();
+  }
+
+  /** Pieces in the SECTION's main contract (excludes nested-vault interior pieces). */
+  private get sectionPieceTotal(): number {
+    let n = 0;
+    for (const p of this.pieces.values()) if (p.zoneId === null) n += 1;
+    return n;
   }
 
   /** Once a contract completes, hold the celebration briefly, then reset the
    *  blueprint to fresh ghosts so building loops (§2.5 "another contract"). */
   private advanceContract(now: number): void {
+    this.advanceVaults(now); // nested vaults loop on their own (independent of the section)
     if (!this.completed) return;
     if (this.completedAt === null) {
       this.completedAt = now;
       return;
     }
     if (now - this.completedAt >= DEFAULT_CONTRACT_RESET_MS) {
-      for (const piece of this.pieces.values()) piece.reset();
+      // Reset the SECTION's ghosts (a vault loops separately, see advanceVaults).
+      for (const piece of this.pieces.values()) if (piece.zoneId === null) piece.reset();
       this.placed = 0;
       this.completed = false;
       this.completedAt = null;
-      this.events.push({ name: DomainEvent.ContractStarted, payload: { total: this.pieces.size } });
+      this.events.push({
+        name: DomainEvent.ContractStarted,
+        payload: { total: this.sectionPieceTotal },
+      });
+    }
+  }
+
+  /** Loop each nested vault's interior contract independently of (and faster than) the
+   *  section: once all its ghosts are built, hold a brief "done" beat, then reset them
+   *  to fresh ghosts — so the chamber stays a living worksite with a window to help. */
+  private advanceVaults(now: number): void {
+    for (const zone of this.zones) {
+      let total = 0;
+      let placed = 0;
+      for (const p of this.pieces.values()) {
+        if (p.zoneId !== zone.id) continue;
+        total += 1;
+        if (p.status === PieceStatus.Placed) placed += 1;
+      }
+      if (total === 0 || placed < total) {
+        zone.rebuildAt = null; // still building (or no interior contract) — not done
+      } else if (zone.rebuildAt === null) {
+        zone.rebuildAt = now + VAULT_REBUILD_MS; // just finished — start the beat
+      } else if (now >= zone.rebuildAt) {
+        for (const p of this.pieces.values()) if (p.zoneId === zone.id) p.reset();
+        zone.rebuildAt = null; // fresh ghosts — build it again
+      }
     }
   }
 
   private checkContractComplete(): void {
-    if (!this.completed && this.pieces.size > 0 && this.placed >= this.pieces.size) {
+    const total = this.sectionPieceTotal;
+    if (!this.completed && total > 0 && this.placed >= total) {
       this.completed = true;
       this.events.push({
         name: DomainEvent.ContractCompleted,
-        payload: { placed: this.placed, total: this.pieces.size },
+        payload: { placed: this.placed, total },
       });
     }
   }
@@ -644,10 +713,14 @@ export class Chunk {
     return d;
   }
 
-  private nearestResource(x: number, y: number): Resource | null {
+  /** Nearest depot in the robot's own zone (`zoneId` null = the section; a vault id =
+   *  that chamber). A robot only sources from its own zone, so vault crews use the
+   *  vault depot and section crews ignore it. */
+  private nearestResource(x: number, y: number, zoneId: number | null): Resource | null {
     let best: Resource | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const res of this.resources.values()) {
+      if (res.zoneId !== zoneId) continue;
       const d = wrappedDistance(x, y, res.x, res.y, this.width);
       if (d < bestDist) {
         bestDist = d;
@@ -672,11 +745,14 @@ export class Chunk {
     return best;
   }
 
-  private nearestGhost(x: number, y: number): Piece | null {
+  /** Nearest unbuilt ghost in the robot's own zone — so vault crews build the vault's
+   *  interior contract and section crews build the section's (and ignore each other's). */
+  private nearestGhost(x: number, y: number, zoneId: number | null): Piece | null {
     let best: Piece | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const piece of this.pieces.values()) {
       if (piece.status !== PieceStatus.Ghost) continue;
+      if (piece.zoneId !== zoneId) continue;
       const d = wrappedDistance(x, y, piece.x, piece.y, this.width);
       if (d < bestDist) {
         bestDist = d;

@@ -25,6 +25,10 @@ export class Piece {
   reserveDeadline = 0;
   /** InProgress: the weld finishes at this time if both stay engaged. */
   weldDoneAt: number | null = null;
+  /** The nested zone (§4.4) this piece belongs to, or null for the section's main
+   *  contract. Interior-vault pieces are built only by robots inside that zone and
+   *  don't count toward the section contract; server-internal (not on the wire). */
+  zoneId: number | null = null;
 
   constructor(id: number, stableId: string, x: number, y: number, weld = false) {
     this.id = id;
