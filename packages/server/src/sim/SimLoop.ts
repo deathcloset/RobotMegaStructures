@@ -56,8 +56,9 @@ export class SimLoop {
     const dt = (start - this.lastTickWall) / 1000;
     this.lastTickWall = start;
 
-    // 1. advance simulation
-    for (const chunk of this.chunks.all()) chunk.step(dt, start);
+    // 1. advance simulation (the delivery swarm ferries to wherever a flag is planted)
+    const flagSection = this.chunks.flagSection();
+    for (const chunk of this.chunks.all()) chunk.step(dt, start, flagSection);
     this.tick += 1;
 
     // 1b. hand off robots across section boundaries (OSHA checkpoint); nudge any

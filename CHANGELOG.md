@@ -20,8 +20,33 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ## Unreleased — Phase 2, continued 🚧
 
-Building on the v0.3.0 architecture (most recent first). Up next: a dedicated
-**delivery-swarm** robot type.
+Building on the v0.3.0 architecture (most recent first).
+
+### Slice 9 — delivery-swarm couriers 🚚
+
+The work-flag grows a **logistics** arm: plant it and a **swarm of couriers** ferries
+material to that section from across the planet and builds it — set-and-forget supply
+lines. (Builders rally to *mine* near the flag; couriers *deliver* to it — two robot
+types, one command.) With no flag, couriers just help build their own section.
+
+- **New courier role** (`isCourier`, `SEED_COURIERS` per section): a courier grabs a load
+  from the nearest depot wherever it is, carries it across the checkpoints to the flagged
+  section, delivers (builds a ghost), then heads back out to source another. Distinct from
+  a builder, who migrates *empty* and mines.
+- **Planet-wide flag awareness**: `ChunkRegistry.flagSection()` finds the section holding
+  a work-flag; `SimLoop` passes it into each section's step, so couriers everywhere
+  converge on your flag. (One flag served for now; nearest-flag routing is a future
+  refinement.)
+- **Visible without a wire change** (still v10): a courier is just an NPC carrying a load
+  across boundaries toward your flag — the cargo marker already rides the snapshot, and
+  `isCourier` is server-internal.
+- **Rides the deadlock-safe checkpoints**: a ferrying courier queues at a full checkpoint
+  and gives up / turns back like any bot, so supply lines never gridlock.
+- **Proven**: unit (98 tests, +4) — `flagSection` detection, a courier ferrying a load
+  across two sections to the flagged one and building it, a courier picking up + setting
+  its heading, and a no-flag courier building locally. Wire (live server,
+  `SEED_COURIERS=3`): planting a flag grew that section's population as couriers ferried
+  in (5 → 8 → 11, loads in hand) while the planet total held steady.
 
 ### Slice 8 — the vault worksite 🏗️
 

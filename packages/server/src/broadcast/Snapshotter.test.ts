@@ -20,6 +20,7 @@ function deltaConfig(): ServerConfig {
     seedMiners: 0,
     sectionCapacity: Number.POSITIVE_INFINITY,
     nestedZoneCap: 3,
+    seedCouriers: 0,
     metricsLogMs: 5000,
     gracePeriodMs: 120_000,
   };

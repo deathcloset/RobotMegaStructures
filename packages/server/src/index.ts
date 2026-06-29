@@ -92,6 +92,7 @@ httpServer.listen(config.port, config.host, () => {
     seedRobots: config.seedRobots,
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
+    seedCouriers: config.seedCouriers,
     sections: CHUNK_COLS,
     sectionCaps: sectionCaps.join('/'),
     nestedZone: `§${NESTED_ZONE_SECTION + 1} cap ${config.nestedZoneCap}`,
@@ -104,14 +105,15 @@ httpServer.listen(config.port, config.host, () => {
 
 /** Seed a section's NPC crew (negative ids, unique planet-wide) so every section is
  *  a living worksite: the first `seedBuilders` run the build loop autonomously (the
- *  first `seedMiners` of those prospect the ore veins); the rest wander their
- *  section as ambiance. */
+ *  first `seedMiners` of those prospect the ore veins); the next `seedCouriers` are
+ *  delivery-swarm couriers (ferry material to a work-flag); the rest wander as ambiance. */
 function seedRobots(chunk: Chunk): void {
   const span = chunk.x1 - chunk.x0;
   // Population scales with this section's cap, kept a margin below it so there's
   // always room for visitors + roaming crews: tight zones are sparse, roomy ones busy.
   const pop = Math.max(2, Math.min(config.seedRobots, chunk.capacity - 3));
   const builders = Math.min(config.seedBuilders, pop);
+  const couriers = Math.min(config.seedCouriers, pop - builders);
   for (let i = 0; i < pop; i++) {
     nextNpcId += 1;
     const y = chunk.groundY - 20 - Math.random() * 200;
@@ -127,6 +129,9 @@ function seedRobots(chunk: Chunk): void {
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
       robot.prefersMining = i < config.seedMiners; // some prospect the veins
       robot.canMigrate = true; // roaming work crews — travel between sections
+    } else if (i < builders + couriers) {
+      robot.isCourier = true; // delivery swarm — ferries material to the work-flag
+      robot.speed = ROBOT_SPEED * 0.72;
     } else {
       robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
     }

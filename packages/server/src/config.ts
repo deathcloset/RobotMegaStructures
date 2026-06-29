@@ -25,6 +25,9 @@ export interface ServerConfig {
   /** Hard cap of the nested zone — a capped interior chamber you opt into (§4.4). Set
    *  it low (2–3) to feel the queue at its gate. A resident crew fills cap−1 slots. */
   nestedZoneCap: number;
+  /** Delivery-swarm couriers seeded per section (§ Phase 2 logistics): set-and-forget
+   *  bots that ferry material to a planted work-flag's section and build it there. */
+  seedCouriers: number;
   metricsLogMs: number;
   gracePeriodMs: number;
 }
@@ -61,6 +64,7 @@ export function loadConfig(): ServerConfig {
     seedMiners: num('SEED_MINERS', 2),
     sectionCapacity: num('SECTION_CAPACITY', 12),
     nestedZoneCap: num('NESTED_ZONE_CAP', 3),
+    seedCouriers: num('SEED_COURIERS', 2),
     metricsLogMs: num('METRICS_LOG_MS', 5000),
     gracePeriodMs: num('GRACE_PERIOD_MS', DEFAULT_GRACE_PERIOD_MS),
   };

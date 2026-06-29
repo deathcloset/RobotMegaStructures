@@ -641,3 +641,39 @@ describe('vault worksite — a reason to enter (§4.4)', () => {
     expect(sawReset).toBe(true); // …and it looped back to a ghost (independent of the section)
   });
 });
+
+describe('delivery-swarm couriers (§ Phase 2 logistics)', () => {
+  it('with no flag, a courier just builds its own section (grab depot → place ghost)', () => {
+    const chunk = new Chunk(0);
+    chunk.addResource(new Resource(2_000_001, 'd', 100, 820));
+    const ghost = new Piece(1_000_001, 'g', 300, 820, false);
+    chunk.addPiece(ghost);
+    const courier = new Robot(-1, 'c', 100, 820, true);
+    courier.isCourier = true;
+    chunk.addOccupant(courier);
+
+    let now = 0;
+    for (let i = 0; i < 400 && ghost.status !== PieceStatus.Placed; i++) {
+      now += 100;
+      chunk.step(0.1, now, null); // no flag planted
+    }
+    expect(ghost.status).toBe(PieceStatus.Placed);
+  });
+
+  it('a courier picks up a load locally and carries it (ferrying toward the flag)', () => {
+    const chunk = new Chunk(0);
+    chunk.addResource(new Resource(2_000_001, 'd', 100, 820));
+    const courier = new Robot(-1, 'c', 100, 820, true);
+    courier.isCourier = true;
+    chunk.addOccupant(courier);
+
+    // Flag is in section 2 (not here) → the courier grabs a load here to ferry over.
+    let now = 0;
+    for (let i = 0; i < 200 && courier.migratingTo !== 2; i++) {
+      now += 100;
+      chunk.step(0.1, now, 2);
+    }
+    expect(courier.carrying).toBe(true); // grabbed a load to ferry
+    expect(courier.migratingTo).toBe(2); // …and set its heading for the flagged section
+  });
+});

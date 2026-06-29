@@ -219,6 +219,12 @@ export class Chunk {
     return this.robots.size;
   }
 
+  /** Whether any work-flag is planted in this section — the registry uses this to point
+   *  the delivery swarm at the flagged section (§ Phase 2 logistics). */
+  get hasFlags(): boolean {
+    return this.flags.size > 0;
+  }
+
   /** Contract progress (§3) — pieces placed of the blueprint total (section contract;
    *  a nested vault's interior pieces are counted separately). */
   get pieceCount(): number {
@@ -321,9 +327,11 @@ export class Chunk {
 
   /** Advance the simulation one tick. Robots engaged in a weld hold still;
    *  controlled players and builder NPCs resolve queued actions (builders also
-   *  pick the next one); plain NPCs wander; parked robots hold (§4.7). `now`
-   *  drives the weld, reservation-TTL, builder-dawdle, and contract-reset clocks. */
-  step(dt: number, now: number): void {
+   *  pick the next one); couriers ferry to the flagged section; plain NPCs wander;
+   *  parked robots hold (§4.7). `now` drives the weld, reservation-TTL, builder-dawdle,
+   *  and contract-reset clocks. `flagSection` (if any) is where the delivery swarm
+   *  carries material — the registry finds it across the whole planet. */
+  step(dt: number, now: number, flagSection: number | null = null): void {
     for (const robot of this.robots.values()) {
       if (robot.engagedPieceId !== null) {
         robot.halt(); // holding/welding — the weld logic frees it
@@ -332,9 +340,10 @@ export class Chunk {
       robot.step(dt, this.width);
       if (robot.isNpc) {
         // Builders run the build loop (zone-scoped: a vault crew builds the chamber's
-        // interior contract, a section crew builds the floor). Non-builders inside a
-        // chamber just hold; outside, they wander the whole planet.
+        // interior contract, a section crew builds the floor); couriers ferry material
+        // to the flag. Non-builders inside a chamber just hold; outside, they wander.
         if (robot.isBuilder) this.driveBuilder(robot, now);
+        else if (robot.isCourier) this.driveCourier(robot, now, flagSection);
         else if (robot.insideZone !== null) {
           // A non-builder resident of a chamber: hold inside, don't wander out.
         }
@@ -453,6 +462,63 @@ export class Chunk {
       } else {
         robot.nextActionAt = now + 1000; // nothing to build (resetting) — wait
       }
+    }
+  }
+
+  /**
+   * Delivery-swarm courier (set-and-forget logistics, § Phase 2). When a work-flag is
+   * planted anywhere on the planet, couriers FERRY material to that section and build
+   * there: grab a load from wherever they are, carry it across the checkpoints to the
+   * flag, deliver, then head back out to source another. With no flag they just help
+   * build their current section. A courier's signature — visible on the wire — is a load
+   * crossing section boundaries toward your flag (vs a builder, who migrates empty + mines).
+   */
+  private driveCourier(robot: Robot, now: number, flagSection: number | null): void {
+    if (robot.pendingAction !== null) {
+      this.resolvePending(robot, now);
+      if (robot.pendingAction === null && robot.engagedPieceId === null) {
+        robot.nextActionAt = now + 300 + Math.random() * 900; // a brief beat between runs
+      }
+      return;
+    }
+    if (now < robot.nextActionAt) return;
+
+    if (!robot.carrying) {
+      // Empty AT the delivery target → head back out to source another load elsewhere.
+      if (flagSection !== null && this.id === flagSection) {
+        if (robot.migratingTo === null) {
+          robot.migratingTo = this.randomOtherSection();
+          robot.setTarget(
+            sectionCenterX(robot.migratingTo) + (Math.random() * 2 - 1) * 180,
+            this.wanderY(),
+          );
+        }
+        return;
+      }
+      // Otherwise grab a load from the nearest depot right here, to ferry.
+      const depot = this.nearestResource(robot.x, robot.y, null);
+      if (depot) {
+        robot.setTarget(depot.x, depot.y);
+        robot.pendingAction = { kind: 'pickup', targetId: depot.id };
+      } else {
+        robot.nextActionAt = now + 1000;
+      }
+      return;
+    }
+    // Carrying → deliver at the flagged section (ferry there), or build locally if no flag.
+    const dest = flagSection ?? this.id;
+    if (this.id === dest) {
+      robot.migratingTo = null;
+      const ghost = this.nearestGhost(robot.x, robot.y, null);
+      if (ghost) {
+        robot.setTarget(ghost.x, ghost.y);
+        robot.pendingAction = { kind: 'deliver', targetId: ghost.id };
+      } else {
+        robot.nextActionAt = now + 1000; // arrived but nothing to build — hold the load a beat
+      }
+    } else if (robot.migratingTo !== dest) {
+      robot.migratingTo = dest; // set the heading once; settle carries it across checkpoints
+      robot.setTarget(sectionCenterX(dest) + (Math.random() * 2 - 1) * 180, this.wanderY());
     }
   }
 
