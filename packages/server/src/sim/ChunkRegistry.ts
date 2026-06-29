@@ -12,6 +12,11 @@ import type { Robot } from './Robot';
 /** A player held at a full checkpoint is force-admitted after this long, so a tight
  *  zone is *felt* but can never wall a human (sections drain anyway as bots roam). */
 const MAX_PLAYER_WAIT_MS = 3000;
+/** A *bot* held at a full checkpoint this long gives up and turns back into its own
+ *  section, so the queue drains instead of freezing. Without this, mutually-full
+ *  sections deadlock — nobody yields, no slot ever frees, everything grinds to a halt.
+ *  Long enough that the queue is visibly *felt*, short enough that it always clears. */
+const BOT_QUEUE_PATIENCE_MS = 5000;
 /** Ring-section labels float this far above the surface (nested zones carry their
  *  own anchor — they sit up in the chamber). */
 const RING_LABEL_DY = 420;
@@ -159,21 +164,32 @@ export class ChunkRegistry {
         const full = to.occupantCount + approved >= to.capacity;
         if (full) {
           const isPlayer = !robot.isNpc && robot.ownerConnectionId !== null;
-          // A player is force-admitted after a bounded wait so a tight zone is felt
-          // but never walls them; bots wait until a slot frees.
-          const forceAdmit =
-            isPlayer && robot.queuedSince !== 0 && now - robot.queuedSince >= MAX_PLAYER_WAIT_MS;
+          if (robot.queuedSince === 0) robot.queuedSince = now;
+          const waited = now - robot.queuedSince;
+          // A player is force-admitted after a bounded wait (never wall a human). A BOT
+          // that's queued too long instead GIVES UP: it abandons the crossing and turns
+          // back into its own section, so the queue drains rather than deadlocking
+          // (mutually-full sections would otherwise freeze — nobody yields, no slot
+          // frees). Queues still form (and are felt); they just self-clear.
+          const forceAdmit = isPlayer && waited >= MAX_PLAYER_WAIT_MS;
           if (!forceAdmit) {
+            if (!isPlayer && waited >= BOT_QUEUE_PATIENCE_MS) {
+              robot.migratingTo = null; // give up heading for that (full) section
+              robot.blocked = false;
+              robot.queuedSince = 0;
+              robot.setTarget(
+                from.centerX + (Math.random() * 2 - 1) * (SECTION_WIDTH / 2 - 48),
+                from.groundY - 40 - Math.random() * 180,
+              );
+              continue;
+            }
             // Queue at the checkpoint, held just inside the current section.
             const rightNeighbor = (from.id + 1) % this.chunks.length;
             robot.x = to.id === rightNeighbor ? from.x1 - edge : from.x0 + edge;
             robot.blocked = true;
-            if (isPlayer) {
-              if (robot.queuedSince === 0) robot.queuedSince = now;
-              if (robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
-                robot.blockedNotifyAt = now + 1500;
-                notices.push({ connId: robot.ownerConnectionId, section: to.id });
-              }
+            if (isPlayer && robot.ownerConnectionId !== null && now >= robot.blockedNotifyAt) {
+              robot.blockedNotifyAt = now + 1500;
+              notices.push({ connId: robot.ownerConnectionId, section: to.id });
             }
             continue;
           }

@@ -326,7 +326,9 @@ export class Chunk {
           // A resident worker of a nested chamber: hold inside, don't wander out.
         } else if (robot.isBuilder) this.driveBuilder(robot, now);
         // Wanderers roam the WHOLE planet (across sections), so bots flow through
-        // checkpoints and queue at busy ones — the section caps come alive (§4.4).
+        // checkpoints and queue at busy ones — the section caps come alive (§4.4). A
+        // bot that queues too long gives up and turns back (ChunkRegistry.settle), so
+        // the queues stay lively but never deadlock.
         else if (!robot.moving) robot.setTarget(Math.random() * this.width, this.wanderY());
       } else if (robot.controlled) {
         this.resolvePending(robot, now);

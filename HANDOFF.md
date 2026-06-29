@@ -148,12 +148,14 @@ through the one `applyIntent` chokepoint — copy that shape.
 - **Checkpoint dynamics (tunables):** wanderers roam + builder crews migrate (drawn to a
   clock-derived rotating hot section), so checkpoints fill and queue in waves; **players
   queue briefly then are force-admitted** (`MAX_PLAYER_WAIT_MS` in `ChunkRegistry.ts`),
-  so a tight zone is felt but never walls a human. Caps **vary per zone** (`CAP_MULT` +
-  `MIN_SECTION_CAP` in `index.ts`, anchored to `SECTION_CAPACITY`) and each section's crew
-  scales to its cap (`pop = capacity − 3`). Other knobs: `Chunk.ts` (`RELOCATE_*`,
-  `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued` gauge in the metrics log. The live
-  "N/M full" cue shipped as the zone labels (slice 6); a held bot re-pathing after a long
-  wait is still a nice-to-have.
+  so a tight zone is felt but never walls a human. **Bots that queue past
+  `BOT_QUEUE_PATIENCE_MS` (5 s) give up and turn back into their own section** — the
+  release valve that stops mutually-full sections from deadlocking (queues stay lively
+  but drain in waves; the `queued` gauge rises and falls rather than climbing to a frozen
+  plateau). Caps **vary per zone** (`CAP_MULT` + `MIN_SECTION_CAP` in `index.ts`, anchored
+  to `SECTION_CAPACITY`) and each section's crew scales to its cap (`pop = capacity − 3`).
+  Other knobs: `Chunk.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued`
+  gauge in the metrics log.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids

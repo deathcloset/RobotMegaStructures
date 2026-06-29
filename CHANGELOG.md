@@ -65,6 +65,15 @@ cap is **hard** for everyone — you queue at the gate for a spot, or walk on by
   robot ascends), player B taps the **full** gate and is **held at it** (count stays 2/2)
   — the hard cap, end-to-end at v10.
 
+> **Playtest catch (Ben), fixed here:** the *ring* checkpoints could **deadlock** —
+> roaming crews all piled into the rotating hot section, and since no bot ever yielded,
+> mutually-full sections froze each other (everything ground to a halt at the queue
+> lines). Fixed with a release valve: a bot queued past `BOT_QUEUE_PATIENCE_MS` (5 s)
+> **gives up and turns back into its own section**, so queues stay lively but always
+> drain. Verified: under heavy pressure the `queued` gauge now rises and falls in **waves**
+> (peaks ~6, draining to ~1) instead of climbing to a frozen plateau. (Players are still
+> never walled — they force-admit; only bots give up.)
+
 ### Slice 6 — numbered zones + varied caps 🪧
 
 The sections become **places you can read**. Each zone floats its **number and live

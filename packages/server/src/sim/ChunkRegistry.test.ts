@@ -146,6 +146,28 @@ describe('ChunkRegistry — OSHA caps (§4.4)', () => {
     reg.settle(1000);
     expect(reg.queuedCount()).toBe(1);
   });
+
+  it('a bot gives up and turns back after waiting too long (no checkpoint deadlock)', () => {
+    const reg = new ChunkRegistry(1);
+    reg.get(1)!.addOccupant(new Robot(-2, 'resident', 1500, 800, true)); // section 1 full
+    const bot = new Robot(-1, 'bot', 1100, 800, true); // a builder migrating into section 1
+    bot.isBuilder = true;
+    bot.canMigrate = true;
+    bot.migratingTo = 1;
+    reg.get(0)!.addOccupant(bot);
+
+    reg.settle(1000);
+    expect(bot.blocked).toBe(true); // queuing at the checkpoint
+
+    bot.x = 1100; // it keeps pushing toward the full section…
+    reg.settle(7000); // …but ~6 s later it's past the bot's patience
+    expect(bot.blocked).toBe(false); // gave up
+    expect(bot.migratingTo).toBeNull(); // abandoned the crossing
+    expect(reg.get(1)!.getRobot(-1)).toBeUndefined(); // never entered the full section
+    expect(reg.get(0)!.getRobot(-1)).toBe(bot); // turned back into its own section
+    expect(bot.targetX).toBeGreaterThanOrEqual(0); // …aimed back inside it
+    expect(bot.targetX).toBeLessThan(1024);
+  });
 });
 
 describe('ChunkRegistry — roaming work crews', () => {
