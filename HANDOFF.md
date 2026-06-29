@@ -1,33 +1,25 @@
 # Handoff — pick up here
 
-## Where we are: **v0.2.0 "First Bolt" 🔩** — Phase 1 complete & merged to `main`
+## Where we are: **v0.3.0 "Full House" 🏟️** — Phase 2 milestone on `main`
 
-A real build loop on the authoritative server: robots haul from depots to a ghost
-blueprint and place pieces; the top row is **two-robot weld** pieces (holder +
-welder, player *or* AI bot); **autonomous builder bots** keep the site bustling;
-contracts **loop**; and dropped phones **reconnect and resume the same robot**
-(§4.7). Phase 0 (`v0.1.0`) and Phase 1 (`v0.2.0`) are both on **`main`**. Proven
-live with 3 players (two phones + a PC). Longer-horizon ideas live in
+The planet scaled up. A **wrapping ring of numbered sections** (the chunk grid) with
+per-viewport interest (an **8.5×** egress cut, flat as the world grows), **OSHA caps +
+checkpoints** that throttle the bot swarm while never walling a human, **roaming work
+crews** drawn to a rotating hot zone (queues that form *and* drain — bots give up after a
+bounded wait), **varied-cap zones** with live floating labels, and **nested zones** —
+capped interior chambers you opt into through a gate. Plus the gameplay: **surface
+mining**, **commandable crews** (work-flags), the two-robot **weld**, looping contracts,
+reconnect-resume (§4.7), and the surface/sky aesthetic. Phases 0–2 (`v0.1.0`–`v0.3.0`)
+are all on **`main`**; the chunk grid + `settle` handoff are the proven seam for
+multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live in
 [`IDEAS.md`](./IDEAS.md) (fuel, not roadmap — §2.5).
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
-- **In flight (branch `claude/dreamy-newton-1rj5p1`, PR — not yet on `main`):**
-  Phase 2 so far — **slice 1**: a wide **side-scrolling planet whose X axis wraps**;
-  **slice 2**: **surface mining** (ore veins); **slice 3**: **commandable crews**
-  (long-press a **work-flag**); **slice 4**: the **section grid + interest management**
-  (ring of sections, per-viewport subscription — **8.5×** egress cut — + cross-section
-  handoff); **slice 5**: **OSHA caps + the checkpoint** — each section caps the bot
-  swarm, and **roaming work crews** (drawn to a rotating hot section) make checkpoints
-  visibly fill and queue; **slice 6**: **numbered zones + varied caps** — each zone
-  floats a `ZONE n · count/cap` label (reddening to FULL), caps vary across the ring
-  (e.g. 12/5/16/8/4/14) with crews scaled to each cap, and **players now queue briefly**
-  at a full zone (held at the checkpoint, force-admitted after a bounded wait — felt but
-  never walled); **slice 7**: **nested zones** — a capped interior **chamber** (a "VAULT")
-  inside a section that you **opt into** through a gate (tap to enter/ascend, tap to
-  leave); robots traverse *underneath* it, and because entry's a choice the cap is **hard**
-  (queue at the gate, no force-admit). Protocol **v10**. See CHANGELOG "Unreleased".
-  Remaining Phase 2 (delivery-swarm type, then multi-server) is below.
+- **In flight (branch `claude/dreamy-newton-1rj5p1`, new PR — not yet on `main`):**
+  Phase 2 continued — a real **worksite inside the nested vault** (a reason to enter),
+  then a dedicated **delivery-swarm** robot type (set-and-forget cross-section ferrying).
+  See CHANGELOG "Unreleased".
 
 ## Run / operate
 

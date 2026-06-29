@@ -9,8 +9,8 @@ How we version (pre-1.0 proof-of-concept):
 | Version | Codename | Phase |
 |---|---|---|
 | v0.1.0 | First Light 🌅 | 0 — skeleton / prove the pipe |
-| **v0.2.0** | **First Bolt** 🔩 | 1 — the build loop / prove the fun ← we are here |
-| v0.3.0 | Full House 🏟️ | 2 — scale the population |
+| v0.2.0 | First Bolt 🔩 | 1 — the build loop / prove the fun |
+| **v0.3.0** | **Full House** 🏟️ | 2 — scale the population ← we are here |
 | v0.4.0 | Roots 🌱 | 3 — identity & stickiness |
 | v1.0.0 | Grand Opening 🎉 | public launch |
 
@@ -18,13 +18,25 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ---
 
-## Unreleased — Phase 2 (in progress) 🪐 — the world gets big
+## Unreleased — Phase 2, continued 🚧
 
-Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
-first). The world is a **ring of numbered zones**, each with its own **OSHA cap**
-(some tight, some roomy) shown on a floating label, plus **nested zones** — capped
-interior chambers you opt into. A delivery-swarm robot type and real multi-server
-distribution are the slices still to come.
+Building on the v0.3.0 architecture (most recent first). Up next: a real worksite
+inside the nested **vault**, then a dedicated **delivery-swarm** robot type.
+
+---
+
+## v0.3.0 — "Full House" 🏟️ — 2026-06-29 — the world gets big
+
+**Phase 2: scale the population.** The single 1024² square grew into a **wrapping
+planet** — a ring of **numbered sections** (the chunk grid) with per-viewport interest
+(an **8.5×** egress cut, flat as the world grows), **OSHA caps + checkpoints** that
+throttle the autonomous bot swarm while never walling a human, **roaming work crews**
+drawn to a rotating hot zone, **varied-cap zones** with live floating labels, and
+**nested zones** — capped interior chambers you opt into. Plus the gameplay to fill it:
+**surface mining**, **commandable crews** (work-flags), and the wider **surface/sky
+aesthetic**. The chunk grid + the `settle` handoff are the proven seam for
+**multi-server distribution** (the next infra arc). Protocol **v10**. Shipped in slices
+(most recent first).
 
 ### Slice 7 — nested zones 🪆
 

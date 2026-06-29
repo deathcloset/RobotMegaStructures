@@ -1,6 +1,6 @@
 /** Human-facing project version + milestone codename (see CHANGELOG.md). */
-export const APP_VERSION = '0.2.0';
-export const APP_CODENAME = 'First Bolt';
+export const APP_VERSION = '0.3.0';
+export const APP_CODENAME = 'Full House';
 
 /** Bumped on any wire-protocol change; C_HELLO is rejected on mismatch.
  *  v2 (Phase 1): adds the interact intent + piece/resource entity kinds.
