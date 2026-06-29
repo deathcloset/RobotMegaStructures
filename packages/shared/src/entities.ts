@@ -20,6 +20,12 @@ export enum EntityKind {
    *  work that area; `status` carries the owner's robot id so a client can tell its
    *  own flag from others'. */
   Flag = 5,
+  /** The entrance to a nested zone (§4.4) — a capped interior chamber you opt into.
+   *  Tap it to enter (your robot walks here, then ascends into the chamber) or to
+   *  leave; the server decides which from context. `status` is 1 when the zone is
+   *  full (the client reddens it), else 0. The zone's live count/cap rides
+   *  S_SECTIONS like any other zone. */
+  Gate = 6,
 }
 
 /**

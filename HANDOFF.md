@@ -23,8 +23,11 @@ live with 3 players (two phones + a PC). Longer-horizon ideas live in
   floats a `ZONE n · count/cap` label (reddening to FULL), caps vary across the ring
   (e.g. 12/5/16/8/4/14) with crews scaled to each cap, and **players now queue briefly**
   at a full zone (held at the checkpoint, force-admitted after a bounded wait — felt but
-  never walled). Protocol **v9**. See CHANGELOG "Unreleased". Remaining Phase 2
-  (**nested zones**, delivery-swarm type, then multi-server) is below.
+  never walled); **slice 7**: **nested zones** — a capped interior **chamber** (a "VAULT")
+  inside a section that you **opt into** through a gate (tap to enter/ascend, tap to
+  leave); robots traverse *underneath* it, and because entry's a choice the cap is **hard**
+  (queue at the gate, no force-admit). Protocol **v10**. See CHANGELOG "Unreleased".
+  Remaining Phase 2 (delivery-swarm type, then multi-server) is below.
 
 ## Run / operate
 
@@ -93,16 +96,15 @@ The fun is proven; now grow the world. Ben's direction (don't lose it):
   **work-flag** (`EntityKind.Flag`, one per player) and the builder crew rallies to
   mine the flagged area; tap your own flag to pick it up. Still wanted: a dedicated
   **delivery-swarm** robot type for set-and-forget far ferrying.
-- ✅ **Chunk grid + OSHA handoff** (slices 4–6, this branch) — the planet is a ring of
-  **numbered zones**; interest is per-viewport (8.5× egress cut measured); robots hand
-  off across boundaries; **caps vary** per zone (some tight, some roomy), each zone shows
-  a live `count/cap` label, **roaming work crews** (drawn to a rotating hot section) make
-  checkpoints visibly queue, and **players queue briefly** at a full zone but are
-  force-admitted (felt, never walled) (§4.4).
-  **Next:** **nested zones** (an interior worksite with its own cap that traversers walk
-  around — geometry only; the cap/label/queue model is built), then real multi-server
-  distribution (IDEAS.md "Distributed hosting" — Ben's vision: sections across small
-  boxes; the `settle` handoff + cap are the seam).
+- ✅ **Chunk grid + OSHA handoff + nested zones** (slices 4–7, this branch) — the planet
+  is a ring of **numbered zones**; interest is per-viewport (8.5× egress cut measured);
+  robots hand off across boundaries; **caps vary** per zone, each shows a live `count/cap`
+  label, **roaming work crews** make checkpoints visibly queue, and **players queue
+  briefly** at a full ring zone but are force-admitted (felt, never walled). **Nested
+  zones** add a capped interior **chamber** you opt into through a gate — a hard cap
+  (queue at the gate, or walk on by) (§4.4).
+  **Next:** real multi-server distribution (IDEAS.md "Distributed hosting" — Ben's vision:
+  sections across small boxes; the `settle` handoff + cap are the seam).
 - See [`IDEAS.md`](./IDEAS.md) for the longer arc (distributed hosting,
   living/maintenance hosting of finished structures, the megastructures game-set).
 
@@ -127,16 +129,18 @@ can't overfill) and returns the per-player nudges the gateway delivers as
 `SectionFull`. Mining (slice 2) is the worked example for adding new `EntityKind`s
 through the one `applyIntent` chokepoint — copy that shape.
 
-**Next: nested zones, then distribution (and rough edges to polish).**
-- **Nested zones (the prep is done, slice 6):** mechanically a nested zone is *just
-  another zone with a cap* — the per-section cap, the `S_SECTIONS` label, and the bounded
-  queue all already apply. What's left is **geometry**: model an interior region (a part
-  *inside* other parts) that a traverser can **walk around** — passing through is opt-in
-  — while it still **queues** anyone who wants in. The cleanest seam is a sub-section that
-  doesn't tile the X axis (it sits *within* a parent section's slice) but still carries a
-  `capacity` + occupancy and shows up in `sectionStats()`; routing into it is an explicit
-  enter, not the X-owns-position handoff `settle` uses for the ring. Don't widen the wire
-  until the geometry's decided — labels already ride `S_SECTIONS`.
+**Next: distribution (and rough edges to polish).**
+- **Nested zones (built, slice 7):** a `NestedZone` owned by its parent `Chunk` — a capped
+  interior **chamber** with a gate (`EntityKind.Gate`) on the surface. Entry is opt-in
+  (tap the gate → `pendingAction: 'enter'` → walk to it → ascend into the chamber) and the
+  cap is **hard** (no force-admit — the opposite of the ring checkpoints, since entry is a
+  choice). Occupants stay in the parent's `robots` map (still simulated), flagged
+  `Robot.insideZone` + lifted into the chamber, and ride the same `S_SECTIONS` list (now
+  with `x`/`y`/`nested`). Seeded in `index.ts` §1 with `NESTED_ZONE_CAP` (geometry
+  constants `NESTED_ZONE_*` in shared; the section + id bases are in `index.ts`). Future
+  for it: NPC builders/crews actually **working** inside a chamber (it has no worksite of
+  its own yet — residents just hold slots), multiple nested zones / named vaults, and
+  literal walk-*around* collision (today traversers pass underneath, which reads fine).
 - **Multi-server:** the same `settle` handoff becomes a *network* handoff; `ChunkRegistry`
   becomes the seam where a section is owned by another process/box, coordinated over
   Redis/Valkey. See IDEAS.md "Distributed hosting" (Ben's capacity/failover vision).

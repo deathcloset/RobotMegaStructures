@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { Chunk } from './Chunk';
 import { Deposit } from './Deposit';
+import { NestedZone } from './NestedZone';
 import { Piece } from './Piece';
 import { Resource } from './Resource';
 import { Robot } from './Robot';
@@ -398,5 +399,118 @@ describe('commandable crews — work-flags (§ Phase 2)', () => {
 
     chunk.step(0.1, 100); // one think tick
     expect(builder.pendingAction).toEqual({ kind: 'mine', targetId: far.id });
+  });
+});
+
+describe('nested zones — capped interior chambers (§4.4)', () => {
+  const GATE = 5_000_000;
+  // A chunk (uncapped ring, so only the nested cap is in play) with one nested zone:
+  // a gate on the surface at x=200 and a chamber above it.
+  function withZone(cap: number) {
+    const chunk = new Chunk(0);
+    const zone = new NestedZone(100, 0, cap, 200, 500, GATE, 200, 800);
+    chunk.addZone(zone);
+    return { chunk, zone };
+  }
+  // A controlled player standing right at the gate (in range immediately).
+  function playerAtGate(chunk: Chunk, id = 1) {
+    const p = new Robot(id, `p${id}`, 200, 800, false, id);
+    chunk.addOccupant(p);
+    chunk.drainEvents();
+    return p;
+  }
+  // A resident worker living in the chamber (occupies a slot, doesn't wander).
+  function seedResident(chunk: Chunk, zone: NestedZone, id = -9) {
+    const r = new Robot(id, `res${-id}`, 200, 500, true);
+    r.insideZone = zone.id;
+    chunk.addOccupant(r);
+    zone.occupants.add(id);
+    return r;
+  }
+
+  it('lets a player opt in through the gate and take a slot', () => {
+    const { chunk, zone } = withZone(2);
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null);
+    expect(p.insideZone).toBe(100);
+    expect(zone.count).toBe(1);
+    expect(chunk.zoneStats()[0]).toMatchObject({ id: 100, cap: 2, count: 1, nested: true });
+  });
+
+  it('is a HARD cap — a full chamber queues the next player and never force-admits', () => {
+    const { chunk, zone } = withZone(1);
+    seedResident(chunk, zone); // chamber full (cap 1)
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    // Step well past the sections' bounded wait (3s) — a nested zone never relents.
+    for (let i = 0; i < 100; i++) chunk.step(0.1, i * 100); // ~10s
+    expect(p.insideZone).toBeNull(); // still outside, queued at the gate
+    expect(p.pendingAction?.kind).toBe('enter');
+    expect(zone.count).toBe(1);
+  });
+
+  it('admits a queued player the moment a slot frees', () => {
+    const { chunk, zone } = withZone(1);
+    seedResident(chunk, zone);
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    chunk.step(0.1, 100);
+    expect(p.insideZone).toBeNull(); // blocked while full
+
+    chunk.removeOccupant(-9); // the resident leaves → a slot opens
+    run(chunk, () => p.insideZone !== null);
+    expect(p.insideZone).toBe(100);
+    expect(zone.count).toBe(1);
+  });
+
+  it('leaves the chamber on a second gate tap, freeing the slot', () => {
+    const { chunk, zone } = withZone(2);
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null);
+    expect(zone.count).toBe(1);
+
+    chunk.applyIntent(1, interact(GATE)); // tap the gate again → leave (immediate)
+    expect(p.insideZone).toBeNull();
+    expect(zone.count).toBe(0);
+  });
+
+  it('lets a manual move walk a player out of the chamber', () => {
+    const { chunk, zone } = withZone(2);
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null);
+
+    chunk.applyIntent(1, moveTo(900, 800)); // walk off elsewhere
+    expect(p.insideZone).toBeNull();
+    expect(zone.count).toBe(0);
+  });
+
+  it('never auto-pulls a traverser in — standing at the gate is not entering', () => {
+    const { chunk, zone } = withZone(3);
+    const p = playerAtGate(chunk); // sitting on the gate, but with no enter intent
+    for (let i = 0; i < 20; i++) chunk.step(0.1, i * 100);
+    expect(p.insideZone).toBeNull();
+    expect(zone.count).toBe(0);
+  });
+
+  it('frees the slot when an occupant leaves the section entirely', () => {
+    const { chunk, zone } = withZone(2);
+    const p = playerAtGate(chunk);
+    chunk.applyIntent(1, interact(GATE));
+    run(chunk, () => p.insideZone !== null);
+    expect(zone.count).toBe(1);
+
+    chunk.removeOccupant(1); // handed off / disconnected
+    expect(zone.count).toBe(0);
+  });
+
+  it('reports the gate as an entity whose status flips when the chamber fills', () => {
+    const { chunk, zone } = withZone(1);
+    const gateOf = () => chunk.fullSnapshot().find((e) => e.id === GATE);
+    expect(gateOf()).toMatchObject({ kind: EntityKind.Gate, status: 0 }); // room
+    seedResident(chunk, zone);
+    expect(gateOf()).toMatchObject({ kind: EntityKind.Gate, status: 1 }); // full
   });
 });

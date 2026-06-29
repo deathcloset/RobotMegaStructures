@@ -1,6 +1,7 @@
-import { CHUNK_COLS } from '@rms/shared';
+import { CHUNK_COLS, GROUND_Y } from '@rms/shared';
 import { describe, expect, it } from 'vitest';
 import { ChunkRegistry } from './ChunkRegistry';
+import { NestedZone } from './NestedZone';
 import { Robot } from './Robot';
 
 // The grid is CHUNK_COLS sections of SECTION_WIDTH (1024) tiling the planet.
@@ -81,8 +82,25 @@ describe('ChunkRegistry — OSHA caps (§4.4)', () => {
     expect(reg.get(1)!.capacity).toBe(12);
     reg.get(0)!.addOccupant(new Robot(-1, 'n', 100, 800, true));
     const stats = reg.sectionStats();
-    expect(stats[0]).toEqual({ id: 0, cap: 4, count: 1 });
-    expect(stats[1]).toEqual({ id: 1, cap: 12, count: 0 });
+    // Ring sections carry their label anchor (centre, up in the sky) and nested:false.
+    expect(stats[0]).toEqual({ id: 0, cap: 4, count: 1, x: 512, y: GROUND_Y - 420, nested: false });
+    expect(stats[1]).toEqual({
+      id: 1,
+      cap: 12,
+      count: 0,
+      x: 1536,
+      y: GROUND_Y - 420,
+      nested: false,
+    });
+  });
+
+  it('appends nested zones to sectionStats (a nested zone is just another zone)', () => {
+    const reg = new ChunkRegistry();
+    reg.get(0)!.addZone(new NestedZone(100, 0, 3, 512, 596, 5_000_000, 512, 878));
+    const stats = reg.sectionStats();
+    expect(stats).toHaveLength(CHUNK_COLS + 1); // every ring section, plus the nested one
+    const nested = stats.find((s) => s.nested);
+    expect(nested).toEqual({ id: 100, cap: 3, count: 0, x: 512, y: 596, nested: true });
   });
 
   it('admits only the free slots and queues the rest of the bots (no overfill)', () => {

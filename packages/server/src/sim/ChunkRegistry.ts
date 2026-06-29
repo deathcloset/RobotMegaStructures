@@ -1,10 +1,20 @@
-import { CHUNK_COLS, chunkColOf, SECTION_WIDTH, type SectionInfo, wrapDeltaX } from '@rms/shared';
+import {
+  CHUNK_COLS,
+  chunkColOf,
+  GROUND_Y,
+  SECTION_WIDTH,
+  type SectionInfo,
+  wrapDeltaX,
+} from '@rms/shared';
 import { Chunk } from './Chunk';
 import type { Robot } from './Robot';
 
 /** A player held at a full checkpoint is force-admitted after this long, so a tight
  *  zone is *felt* but can never wall a human (sections drain anyway as bots roam). */
 const MAX_PLAYER_WAIT_MS = 3000;
+/** Ring-section labels float this far above the surface (nested zones carry their
+ *  own anchor — they sit up in the chamber). */
+const RING_LABEL_DY = 420;
 
 /**
  * The chunk grid (§4.3): the planet's circumference tiled by `CHUNK_COLS` sections,
@@ -31,13 +41,20 @@ export class ChunkRegistry {
     }
   }
 
-  /** Per-section cap + live occupancy, for the client's zone labels. */
+  /** Per-zone cap + live occupancy for the client's zone labels: every ring section,
+   *  then each section's nested zones appended — a nested zone is "just another zone
+   *  with a cap," so it rides the same list (it just carries its own label anchor). */
   sectionStats(): SectionInfo[] {
-    return this.chunks.map((c) => ({
+    const out: SectionInfo[] = this.chunks.map((c) => ({
       id: c.id,
       cap: Number.isFinite(c.capacity) ? Math.round(c.capacity) : 0,
       count: c.occupantCount,
+      x: c.centerX,
+      y: GROUND_Y - RING_LABEL_DY,
+      nested: false,
     }));
+    for (const c of this.chunks) out.push(...c.zoneStats());
+    return out;
   }
 
   get(id: number): Chunk | undefined {

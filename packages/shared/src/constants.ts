@@ -11,8 +11,10 @@ export const APP_CODENAME = 'First Bolt';
  *  v6 (Phase 2): adds the ore-deposit entity kind (surface mining).
  *  v7 (Phase 2): adds the work-flag intent + flag entity kind (commandable crews).
  *  v8 (Phase 2): adds the SectionFull checkpoint event (OSHA caps).
- *  v9 (Phase 2): adds S_SECTIONS (per-section cap/occupancy for zone labels). */
-export const PROTOCOL_VERSION = 9;
+ *  v9 (Phase 2): adds S_SECTIONS (per-section cap/occupancy for zone labels).
+ *  v10 (Phase 2): adds the gate entity kind + nested-zone label fields (x/y/nested
+ *               on SectionInfo) — capped interior chambers you opt into. */
+export const PROTOCOL_VERSION = 10;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;
@@ -49,6 +51,20 @@ export const GROUND_Y = 896;
 /** The world's X axis wraps (it's a cylinder). Sent in S_WELCOME so the client
  *  renders the seam seamlessly and the camera loops all the way around. */
 export const WORLD_WRAP_X = true;
+
+/**
+ * Nested zone (§4.4 "a part of the structure in the middle of other parts"): a
+ * capped interior chamber that sits WITHIN a parent section rather than tiling the
+ * ring. It floats above the surface, so ground-traversers pass underneath it
+ * (entry is opt-in via a gate, never forced by walking past). These three numbers
+ * are the chamber's geometry, shared so the server places entrants and the client
+ * draws the room at the same size. Position is per-zone (rides S_SECTIONS).
+ */
+/** How far above the surface a nested chamber's centre floats (world units). */
+export const NESTED_ZONE_DY = 300;
+/** Chamber half-extents — entrants cluster inside this box; the client draws it. */
+export const NESTED_ZONE_HALF_W = 120;
+export const NESTED_ZONE_HALF_H = 70;
 
 /** Robot movement speed, world units per second. */
 export const ROBOT_SPEED = 80;

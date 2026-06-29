@@ -7,7 +7,11 @@ export type PendingAction =
   | { kind: 'pickup'; targetId: number }
   | { kind: 'deliver'; targetId: number }
   | { kind: 'weld'; targetId: number }
-  | { kind: 'mine'; targetId: number };
+  | { kind: 'mine'; targetId: number }
+  /** Walk to a nested zone's gate, then enter it (or queue at the gate if it's at
+   *  its cap — a nested zone is a hard cap, since entry is opt-in). `targetId` is
+   *  the gate's entity id. */
+  | { kind: 'enter'; targetId: number };
 
 export class Robot {
   readonly id: number;
@@ -47,6 +51,10 @@ export class Robot {
   /** When the current dig of an ore vein finishes (§ Phase 2 mining); null when
    *  not mining. The robot holds at the vein until then. */
   mineUntil: number | null = null;
+  /** The nested zone (§4.4) this robot is currently inside (its id), or null when
+   *  out on the ring. Set on entry through a gate, cleared on leave / handoff /
+   *  any manual move — so a traverser is never auto-pulled into a chamber. */
+  insideZone: number | null = null;
   /** Held at a section checkpoint because the next section is at its OSHA cap
    *  (§4.4). Transient, set by the registry's handoff each tick. */
   blocked = false;

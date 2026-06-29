@@ -1,9 +1,10 @@
 import {
   EntityKind,
+  NESTED_ZONE_HALF_H,
+  NESTED_ZONE_HALF_W,
   PieceStatus,
   RobotStatusBit,
   type SectionInfo,
-  sectionCenterX,
 } from '@rms/shared';
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { RenderEntity } from '../world/EntityStore';
@@ -38,11 +39,14 @@ export class Stage {
   private cargoTex!: Texture;
   private depositTex!: Texture;
   private flagTex!: Texture;
+  private gateTex!: Texture;
   private readonly sprites = new Map<number, Sprite>();
   /** Small "held material" marker shown above a carrying robot. */
   private readonly cargo = new Map<number, Sprite>();
-  /** Floating "ZONE n · count/cap" labels above each section, keyed by section id. */
+  /** Floating "ZONE n · count/cap" labels above each zone (ring + nested), by id. */
   private readonly labels = new Map<number, Text>();
+  /** Enclosure outlines for nested chambers (redrawn each frame; world-space). */
+  private readonly zoneRooms = new Graphics();
   private sections: SectionInfo[] = [];
   private myRobotId: number | null = null;
   // World geometry (from the welcome); 0 width disables wrap until we know it.
@@ -66,12 +70,27 @@ export class Stage {
     this.atmosphere.anchor.set(0, 0);
     this.backdrop.addChild(this.sky, this.atmosphere, this.stars);
     this.app.stage.addChild(this.backdrop, this.world);
+    // The chamber outlines sit at the back of the world layer, so robots inside a
+    // nested zone render in front of (i.e. within) the room.
+    this.world.addChild(this.zoneRooms);
     this.robotTex = this.makeCircleTexture(16);
     this.pieceTex = this.makeSquareTexture(30, 6);
     this.resourceTex = this.makeSquareTexture(34, 8);
     this.cargoTex = this.makeSquareTexture(12, 2);
     this.depositTex = this.makeSquareTexture(26, 4); // rendered as a faceted rock
     this.flagTex = this.makeFlagTexture();
+    this.gateTex = this.makeGateTexture();
+  }
+
+  /** A gate: a doorway slab standing on the surface (anchored at its base), tinted
+   *  by the chamber's full-state. The entrance to a nested zone — tap to enter/leave. */
+  private makeGateTexture(): Texture {
+    const g = new Graphics();
+    g.roundRect(0, 6, 30, 30, 5).fill(0xffffff); // door slab
+    g.roundRect(6, 14, 18, 22, 3).fill(0x0a0e14); // dark opening (an archway read)
+    const tex = this.app.renderer.generateTexture(g);
+    g.destroy();
+    return tex;
   }
 
   /** A work-flag: a slim pole with a pennant near the top. The texture's pole base
@@ -214,11 +233,13 @@ export class Stage {
     this.drawLabels();
   }
 
-  /** Floating zone labels above each section: "ZONE n" + live count/cap, reddening
-   *  when a zone is full. Counter-scaled so they stay a constant on-screen size at
-   *  any zoom, and wrap-positioned like everything else. */
+  /** Floating zone labels for every zone (ring sections + nested chambers): a name +
+   *  live count/cap, reddening when full. Each label floats at the server-sent anchor
+   *  (a nested chamber doesn't sit at a section centre); nested zones also get an
+   *  enclosure outline. Labels are counter-scaled to a constant on-screen size and
+   *  wrap-positioned like everything else. */
   private drawLabels(): void {
-    const labelY = this.groundY - 420; // up in the sky, above the structure
+    this.zoneRooms.clear();
     const present = new Set<number>();
     for (const s of this.sections) {
       present.add(s.id);
@@ -239,10 +260,21 @@ export class Stage {
         this.labels.set(s.id, label);
       }
       const full = s.cap > 0 && s.count >= s.cap;
-      const txt = `ZONE ${s.id + 1}\n${s.count}/${s.cap || '∞'}${full ? ' FULL' : ''}`;
-      if (label.text !== txt) label.text = txt;
-      label.tint = full ? 0xff8a5c : 0xbcd2ea; // cheap recolour (no re-render)
-      label.position.set(this.wrapNear(sectionCenterX(s.id)), labelY);
+      const x = this.wrapNear(s.x);
+      if (s.nested) {
+        // A nested chamber: draw its enclosure (world-space, so it scales with zoom)
+        // and float a distinct label just above it.
+        this.drawZoneRoom(x, s.y, full);
+        const txt = `◆ VAULT\n${s.count}/${s.cap}${full ? ' FULL' : ''}`;
+        if (label.text !== txt) label.text = txt;
+        label.tint = full ? 0xff8a5c : 0x9fe0ff;
+        label.position.set(x, s.y - NESTED_ZONE_HALF_H - 28);
+      } else {
+        const txt = `ZONE ${s.id + 1}\n${s.count}/${s.cap || '∞'}${full ? ' FULL' : ''}`;
+        if (label.text !== txt) label.text = txt;
+        label.tint = full ? 0xff8a5c : 0xbcd2ea; // cheap recolour (no re-render)
+        label.position.set(x, s.y);
+      }
       label.scale.set(1 / this.camScale); // constant on-screen size at any zoom
     }
     for (const [id, label] of this.labels) {
@@ -251,6 +283,22 @@ export class Stage {
         this.labels.delete(id);
       }
     }
+  }
+
+  /** Draw one nested chamber's enclosure in world space — a soft-filled rounded rect
+   *  whose border reddens when the chamber is full. */
+  private drawZoneRoom(cx: number, cy: number, full: boolean): void {
+    const color = full ? 0xff6b6b : 0x6bd6ff;
+    this.zoneRooms
+      .roundRect(
+        cx - NESTED_ZONE_HALF_W,
+        cy - NESTED_ZONE_HALF_H,
+        NESTED_ZONE_HALF_W * 2,
+        NESTED_ZONE_HALF_H * 2,
+        12,
+      )
+      .fill({ color, alpha: 0.06 })
+      .stroke({ color, width: 2, alpha: 0.5 });
   }
 
   /** The representative of world-X `x` closest to the camera, so an entity near
@@ -265,6 +313,7 @@ export class Stage {
     if (kind === EntityKind.Resource) return this.resourceTex;
     if (kind === EntityKind.Deposit) return this.depositTex;
     if (kind === EntityKind.Flag) return this.flagTex;
+    if (kind === EntityKind.Gate) return this.gateTex;
     return this.robotTex;
   }
 
@@ -318,6 +367,16 @@ export class Stage {
         const mine = e.status === this.myRobotId;
         sprite.tint = mine ? 0x46e3a0 : 0xc9a24e;
         sprite.alpha = mine ? 1 : 0.75;
+        sprite.scale.set(1);
+        break;
+      }
+      case EntityKind.Gate: {
+        // A nested zone's entrance, standing on the surface (anchored at its base).
+        // Cyan when there's room, red when the chamber is full (status === 1).
+        sprite.anchor.set(0.5, 1);
+        const full = e.status === 1;
+        sprite.tint = full ? 0xff6b6b : 0x6bd6ff;
+        sprite.alpha = 0.95;
         sprite.scale.set(1);
         break;
       }

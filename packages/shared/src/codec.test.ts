@@ -63,8 +63,8 @@ const samples: AnyMessage[] = [
   {
     t: MessageType.S_SECTIONS,
     sections: [
-      { id: 0, cap: 12, count: 7 },
-      { id: 1, cap: 5, count: 5 },
+      { id: 0, cap: 12, count: 7, x: 512, y: 476, nested: false },
+      { id: 100, cap: 3, count: 3, x: 512, y: 596, nested: true },
     ],
   },
 ];

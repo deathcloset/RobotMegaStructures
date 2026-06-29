@@ -24,12 +24,21 @@ export enum MessageType {
   S_SECTIONS = 15,
 }
 
-/** Live state of one section (zone) for the client's zone labels (§4.4). Sections
- *  vary in OSHA cap, so the client can't infer this — the server sends it. */
+/** Live state of one zone for the client's zone labels (§4.4). Covers both the ring
+ *  sections AND nested zones — a nested zone is "just another zone with a cap." The
+ *  server sends each zone's label anchor (`x`,`y`) because a nested chamber doesn't
+ *  sit at a section centre, and `nested` so the client styles/encloses it distinctly.
+ *  Sections also vary in OSHA cap, which the client can't infer. */
 export interface SectionInfo {
   id: number;
   cap: number;
   count: number;
+  /** World-space anchor for the floating label (and, for nested zones, the chamber
+   *  centre where occupants gather). */
+  x: number;
+  y: number;
+  /** True for a nested interior chamber (vs a ring section). */
+  nested: boolean;
 }
 
 export interface CHello {

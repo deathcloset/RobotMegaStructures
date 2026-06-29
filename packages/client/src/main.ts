@@ -176,6 +176,7 @@ function actionable(e: RenderEntity, carrying: boolean): boolean {
   if (e.kind === EntityKind.Resource) return !carrying; // grab from a depot
   if (e.kind === EntityKind.Deposit) return !carrying && e.status > 0; // mine an ore vein
   if (e.kind === EntityKind.Flag) return e.status === myRobotId; // tap your own flag to pick it up
+  if (e.kind === EntityKind.Gate) return true; // tap a nested zone's gate to enter / leave
   if (e.kind === EntityKind.Piece) return carrying && e.status === PieceStatus.Ghost; // deliver
   if (e.kind === EntityKind.WeldPiece) {
     if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)

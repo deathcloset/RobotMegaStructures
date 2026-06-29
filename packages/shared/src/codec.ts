@@ -87,7 +87,17 @@ function toWire(msg: AnyMessage): unknown[] {
     case MessageType.S_EVENT:
       return [msg.t, msg.name, msg.payload ?? null];
     case MessageType.S_SECTIONS:
-      return [msg.t, msg.sections.map((s) => [s.id, s.cap, s.count])];
+      return [
+        msg.t,
+        msg.sections.map((s) => [
+          s.id,
+          s.cap,
+          s.count,
+          toFixed16(s.x),
+          toFixed16(s.y),
+          s.nested ? 1 : 0,
+        ]),
+      ];
   }
 }
 
@@ -160,7 +170,14 @@ export function decodeMessage(bytes: Uint8Array): AnyMessage {
     case MessageType.S_SECTIONS:
       return {
         t,
-        sections: (a[1] as number[][]).map((s) => ({ id: s[0]!, cap: s[1]!, count: s[2]! })),
+        sections: (a[1] as number[][]).map((s) => ({
+          id: s[0]!,
+          cap: s[1]!,
+          count: s[2]!,
+          x: fromFixed16(s[3]!),
+          y: fromFixed16(s[4]!),
+          nested: s[5] === 1,
+        })),
       };
     default:
       throw new Error(`unknown message type: ${String(t)}`);

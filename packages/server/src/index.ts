@@ -1,5 +1,12 @@
 import { createServer } from 'node:http';
-import { APP_CODENAME, APP_VERSION, CHUNK_COLS, ROBOT_SPEED } from '@rms/shared';
+import {
+  APP_CODENAME,
+  APP_VERSION,
+  CHUNK_COLS,
+  NESTED_ZONE_DY,
+  NESTED_ZONE_HALF_W,
+  ROBOT_SPEED,
+} from '@rms/shared';
 import { Snapshotter } from './broadcast/Snapshotter';
 import { loadConfig } from './config';
 import { log } from './log';
@@ -9,6 +16,7 @@ import { WsGateway } from './net/WsGateway';
 import { seedContract } from './sim/blueprint';
 import type { Chunk } from './sim/Chunk';
 import { ChunkRegistry } from './sim/ChunkRegistry';
+import { NestedZone } from './sim/NestedZone';
 import { Robot } from './sim/Robot';
 import { SimLoop } from './sim/SimLoop';
 import { InMemoryWorldRepo } from './state/repository';
@@ -32,6 +40,15 @@ for (const chunk of chunks.all()) {
   seedContract(chunk, repo);
   seedRobots(chunk);
 }
+
+// A nested zone (§4.4): a capped interior chamber inside the spawn section — "a part
+// of the structure in the middle of other parts." Players opt into it through a gate
+// (and queue at its hard cap); a small resident crew keeps it near the limit so the
+// cap is felt right away.
+const NESTED_ZONE_SECTION = 0;
+const NESTED_ZONE_ID = 100; // disjoint from ring section ids (0..CHUNK_COLS-1)
+const GATE_ID_BASE = 5_000_000; // disjoint from piece/resource/deposit/flag id ranges
+seedNestedZone(chunks.get(NESTED_ZONE_SECTION) ?? chunks.primary, config.nestedZoneCap);
 
 const httpServer = createServer((req, res) => {
   if (handleMetrics(req, res, metrics, config)) return;
@@ -77,6 +94,7 @@ httpServer.listen(config.port, config.host, () => {
     seedMiners: config.seedMiners,
     sections: CHUNK_COLS,
     sectionCaps: sectionCaps.join('/'),
+    nestedZone: `§${NESTED_ZONE_SECTION + 1} cap ${config.nestedZoneCap}`,
     piecesPerSection: chunks.primary.pieceCount,
     world: `${chunks.primary.width}x${chunks.primary.height} wrapX groundY=${chunks.primary.groundY}`,
     gracePeriodMs: config.gracePeriodMs,
@@ -113,6 +131,37 @@ function seedRobots(chunk: Chunk): void {
       robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
     }
     chunk.addOccupant(robot);
+  }
+}
+
+/** Seed a nested zone into a parent section: an elevated capped chamber with a gate
+ *  on the surface, plus a small resident crew (cap − 1, clamped) so a lone visitor
+ *  takes the last slot and a second one queues at the gate. */
+function seedNestedZone(parent: Chunk, cap: number): void {
+  const zone = new NestedZone(
+    NESTED_ZONE_ID,
+    parent.id,
+    cap,
+    parent.centerX,
+    parent.groundY - NESTED_ZONE_DY, // the chamber floats above the structure
+    GATE_ID_BASE + parent.id,
+    parent.centerX,
+    parent.groundY - 18, // the gate stands on the surface below
+  );
+  parent.addZone(zone);
+  const residents = Math.max(0, Math.min(cap - 1, 4));
+  for (let i = 0; i < residents; i++) {
+    nextNpcId += 1;
+    const r = new Robot(
+      -nextNpcId,
+      repo.nextStableId('npc'),
+      zone.x + (Math.random() * 2 - 1) * NESTED_ZONE_HALF_W * 0.6,
+      zone.y,
+      true,
+    );
+    r.insideZone = zone.id; // a resident worker living in the chamber
+    parent.addOccupant(r);
+    zone.occupants.add(r.id);
   }
 }
 

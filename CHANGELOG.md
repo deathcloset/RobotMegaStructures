@@ -22,8 +22,48 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 Phase 2 grows the world, shipping in slices on the Phase 2 branch (most recent
 first). The world is a **ring of numbered zones**, each with its own **OSHA cap**
-(some tight, some roomy) shown on a floating label; **nested zones**, a delivery-swarm
-robot type, and real multi-server distribution are the slices still to come.
+(some tight, some roomy) shown on a floating label, plus **nested zones** — capped
+interior chambers you opt into. A delivery-swarm robot type and real multi-server
+distribution are the slices still to come.
+
+### Slice 7 — nested zones 🪆
+
+The first **zone within a zone**: a capped interior **chamber** (a "VAULT") that sits
+*inside* a section rather than tiling the ring — "a part of the structure in the middle
+of other parts." It floats above the surface, so robots traversing the section pass
+**underneath** it; entering is **opt-in** (tap its gate), and because it's a choice, the
+cap is **hard** for everyone — you queue at the gate for a spot, or walk on by.
+
+- **A nested zone is "just another zone with a cap"** — it carries a capacity + live
+  occupancy and rides the **same `S_SECTIONS` label list** as the ring sections (it just
+  carries its own label anchor, since a chamber doesn't sit at a section centre). The
+  cap/label/queue model from slice 6 already covered it; this slice is the geometry + the
+  opt-in entry. New `NestedZone` (owned by its parent `Chunk`, so it shards with the
+  parent later); occupants stay in the parent's robot set, just flagged and lifted up
+  into the chamber.
+- **Opt-in entry via a gate** (new `EntityKind.Gate`): tap the gate → your robot walks
+  to it and **ascends into the chamber**; tap again (or tap to move off) to leave. A
+  traverser crossing the section is **never auto-pulled in** — the gate is the only way
+  in. The server resolves enter/leave/queue from context (§4.2); the gate reddens when
+  the chamber is full.
+- **Hard cap — the deliberate contrast with the ring checkpoints**: the ring never walls
+  a *traverser* (players force-admit after a bounded wait). A nested zone is the opposite
+  — entry is a choice, so the cap is real: a full chamber **queues** you at the gate until
+  a slot frees (no force-admit). A small resident crew fills `cap − 1`, so the limit is
+  felt right away. `NESTED_ZONE_CAP` (default 3) tunes it.
+- **Client**: the gate renders as a doorway on the surface (cyan → red when full); the
+  chamber draws as an enclosure up in the structure with a distinct **◆ VAULT n/m**
+  label; robots inside cluster within it. The geometry is shared (`NESTED_ZONE_*`) so the
+  render matches server placement.
+- **Protocol → 10**: the gate entity kind, plus `x`/`y`/`nested` on `SectionInfo` (so a
+  nested zone's label floats at its chamber and the client styles/encloses it).
+- **Proven**: unit (87 tests, +9) — opt-in entry, the hard-cap queuing *without*
+  force-admit (the ring's opposite), a queued player admitted the moment a slot frees,
+  leaving via the gate / a manual move / departing the section, never auto-pulling a
+  traverser in, and the gate's full-status flip. Wire (cap 2, one resident): `S_SECTIONS`
+  carries `V100 1/2`; player A taps the gate and **enters** (count → 2/2, gate reddens,
+  robot ascends), player B taps the **full** gate and is **held at it** (count stays 2/2)
+  — the hard cap, end-to-end at v10.
 
 ### Slice 6 — numbered zones + varied caps 🪧
 
@@ -227,9 +267,6 @@ in ~9 s** in the new surface layout. The Phase 1 build/weld/resilience suite car
 over unchanged.
 
 ### Next (still in Phase 2)
-- **Nested zones** — an interior worksite (a part *inside* other parts) with its own
-  small cap that traversers walk around but can queue into. The cap/label/queue model is
-  built (slice 6); this slice is the geometry.
 - A dedicated **delivery-swarm** robot type (set-and-forget ferrying between sections).
 - Later (infra): real **multi-server distribution** — sections owned by different
   boxes, coordinated over Redis/Valkey; the `settle` handoff + `SECTION_CAPACITY` cap

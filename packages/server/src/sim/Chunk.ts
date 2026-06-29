@@ -3,13 +3,16 @@ import {
   type ClientMessage,
   DEFAULT_CONTRACT_RESET_MS,
   DomainEvent,
+  EntityKind,
   type EntitySnapshot,
   GROUND_Y,
   INTERACT_RANGE,
   MessageType,
   MINE_DURATION_MS,
+  NESTED_ZONE_HALF_W,
   PieceStatus,
   SECTION_WIDTH,
+  type SectionInfo,
   sectionCenterX,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
@@ -20,6 +23,7 @@ import {
 } from '@rms/shared';
 import type { Deposit } from './Deposit';
 import { Flag } from './Flag';
+import type { NestedZone } from './NestedZone';
 import type { Piece } from './Piece';
 import type { Resource } from './Resource';
 import type { Robot } from './Robot';
@@ -75,6 +79,9 @@ export class Chunk {
   private readonly deposits = new Map<number, Deposit>();
   /** Player work-flags, keyed by flag id (one per player; § Phase 2 crews). */
   private readonly flags = new Map<number, Flag>();
+  /** Nested zones (§4.4): capped interior chambers within this section. Their
+   *  occupants stay in `robots` (still simulated); a zone just tracks membership. */
+  private readonly zones: NestedZone[] = [];
   private readonly events: ChunkEvent[] = [];
   private placed = 0;
   private completed = false;
@@ -106,12 +113,13 @@ export class Chunk {
   }
 
   removeOccupant(robotId: number): void {
-    if (this.robots.delete(robotId)) {
-      this.clearFlag(robotId); // a departed player's work-flag goes with them
-      // Any weld this robot was part of self-heals in advanceWelds (it'll see the
-      // participant missing next tick and release/demote the piece).
-      this.events.push({ name: DomainEvent.RobotLeftChunk, payload: { robotId } });
-    }
+    const robot = this.robots.get(robotId);
+    if (!this.robots.delete(robotId)) return;
+    this.clearFlag(robotId); // a departed player's work-flag goes with them
+    if (robot) this.leaveZone(robot); // free its nested-zone slot, if any
+    // Any weld this robot was part of self-heals in advanceWelds (it'll see the
+    // participant missing next tick and release/demote the piece).
+    this.events.push({ name: DomainEvent.RobotLeftChunk, payload: { robotId } });
   }
 
   /** Plant or move a player's single work-flag (on the surface). § Phase 2 crews. */
@@ -145,6 +153,28 @@ export class Chunk {
     return best;
   }
 
+  /** The nested zone with this id, if any. */
+  private zoneById(id: number): NestedZone | undefined {
+    return this.zones.find((z) => z.id === id);
+  }
+  /** The nested zone this gate-entity id opens, if any. */
+  private zoneByGate(gateId: number): NestedZone | undefined {
+    return this.zones.find((z) => z.gateId === gateId);
+  }
+
+  /** Drop a robot out of whatever nested zone it's in (on leave / a manual move /
+   *  a handoff) so it stops counting against the cap. */
+  private leaveZone(robot: Robot): void {
+    if (robot.insideZone === null) return;
+    this.zoneById(robot.insideZone)?.occupants.delete(robot.id);
+    robot.insideZone = null;
+  }
+
+  /** A spot inside a chamber for an entering robot — spread so occupants don't stack. */
+  private zoneSlotX(zone: NestedZone): number {
+    return zone.x + (Math.random() * 2 - 1) * NESTED_ZONE_HALF_W * 0.6;
+  }
+
   /** Seed a blueprint piece (ghost). Static for the contract's lifetime. */
   addPiece(piece: Piece): void {
     this.pieces.set(piece.id, piece);
@@ -158,6 +188,17 @@ export class Chunk {
   /** Seed an ore deposit (surface mining, § Phase 2). */
   addDeposit(deposit: Deposit): void {
     this.deposits.set(deposit.id, deposit);
+  }
+
+  /** Seed a nested zone (a capped interior chamber within this section). */
+  addZone(zone: NestedZone): void {
+    this.zones.push(zone);
+  }
+
+  /** Live label state for this section's nested zones (appended to S_SECTIONS so a
+   *  nested zone is "just another zone with a cap" to the client). */
+  zoneStats(): SectionInfo[] {
+    return this.zones.map((z) => z.toSectionInfo());
   }
 
   getRobot(robotId: number): Robot | undefined {
@@ -190,10 +231,12 @@ export class Chunk {
     if (!robot) return;
     if (msg.t === MessageType.C_INTENT_MOVE) {
       // A manual move redirects the robot, cancels any queued action, and lets go
-      // of any weld it was holding/welding or vein it was digging.
+      // of any weld it was holding/welding, vein it was digging, or chamber it was
+      // standing in (walking off frees its nested-zone slot).
       robot.engagedPieceId = null;
       robot.mineUntil = null;
       robot.pendingAction = null;
+      this.leaveZone(robot);
       // X wraps around the planet; Y is clamped to the surface (sky..ground).
       robot.setTarget(wrapX(msg.tx, this.width), clamp(msg.ty, 0, this.groundY));
     } else if (msg.t === MessageType.C_INTENT_INTERACT) {
@@ -217,6 +260,23 @@ export class Chunk {
       if (flag.ownerRobotId === robot.id) this.clearFlag(robot.id);
       return;
     }
+    // A gate opens a nested zone: tap it to leave (when you're inside) or to walk
+    // over and enter it. Entry is opt-in — this gate is the only way in, so a
+    // traverser crossing the section is never pulled into the chamber.
+    const zone = this.zoneByGate(targetId);
+    if (zone) {
+      if (robot.insideZone === zone.id) {
+        this.leaveZone(robot);
+        robot.setTarget(zone.gateX, zone.gateY); // step back down to the gate
+      } else {
+        robot.setTarget(zone.gateX, zone.gateY);
+        robot.pendingAction = { kind: 'enter', targetId };
+      }
+      return;
+    }
+    // Any other interaction means heading off to work — leave the chamber first so
+    // the slot frees the moment you decide to go do something else.
+    this.leaveZone(robot);
     if (!robot.carrying) {
       const res = this.resources.get(targetId);
       if (res) {
@@ -262,7 +322,9 @@ export class Chunk {
       }
       robot.step(dt, this.width);
       if (robot.isNpc) {
-        if (robot.isBuilder) this.driveBuilder(robot, now);
+        if (robot.insideZone !== null) {
+          // A resident worker of a nested chamber: hold inside, don't wander out.
+        } else if (robot.isBuilder) this.driveBuilder(robot, now);
         // Wanderers roam the WHOLE planet (across sections), so bots flow through
         // checkpoints and queue at busy ones — the section caps come alive (§4.4).
         else if (!robot.moving) robot.setTarget(Math.random() * this.width, this.wanderY());
@@ -419,6 +481,22 @@ export class Chunk {
         piece.weldDoneAt = now + WELD_DURATION_MS;
         robot.engagedPieceId = piece.id;
       }
+    } else if (action.kind === 'enter') {
+      // Walk to the gate, then opt into the chamber — or queue at the gate if it's
+      // at its cap. A nested zone is a HARD cap (even for players): entry is a
+      // choice, so a real limit is fair; you ascend the moment a slot frees.
+      const zone = this.zoneByGate(action.targetId);
+      if (!zone || robot.insideZone === zone.id) {
+        robot.pendingAction = null;
+        return;
+      }
+      if (!within(robot, { x: zone.gateX, y: zone.gateY }, this.width)) return; // still walking
+      if (zone.isFull) return; // queued at the gate — re-check next tick (no force-admit)
+      zone.occupants.add(robot.id);
+      robot.insideZone = zone.id;
+      robot.setTarget(this.zoneSlotX(zone), zone.y); // ascend into the chamber
+      robot.pendingAction = null;
+      return; // keep the ascend target (don't fall through to halt)
     } else {
       // 'mine': dig an ore vein for a while, then carry off a load (§ Phase 2).
       const dep = this.deposits.get(action.targetId);
@@ -631,6 +709,17 @@ export class Chunk {
     for (const resource of this.resources.values()) out.push(resource.toSnapshot());
     for (const deposit of this.deposits.values()) out.push(deposit.toSnapshot());
     for (const flag of this.flags.values()) out.push(flag.toSnapshot());
+    // A nested zone's gate rides the wire like any other entity (entity-neutral,
+    // §4.6); status flips to 1 when the chamber is full so the client reddens it.
+    for (const zone of this.zones) {
+      out.push({
+        id: zone.gateId,
+        kind: EntityKind.Gate,
+        x: zone.gateX,
+        y: zone.gateY,
+        status: zone.isFull ? 1 : 0,
+      });
+    }
     return out;
   }
 
