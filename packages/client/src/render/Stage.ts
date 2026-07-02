@@ -16,6 +16,12 @@ const ATMOSPHERE = 540;
 /** Surface motion ticks every this many world units (divides WORLD_WIDTH so the
  *  pattern is seamless across the wrap). */
 const TICK_SPACING = 128;
+/** A floating emote (emoji over a robot) rises this far and fades over this long. */
+const EMOTE_FLOAT_MS = 1500;
+const EMOTE_RISE = 36;
+/** A celebration bursts this many emoji, scattered around its anchor. */
+const CELEBRATE_COUNT = 5;
+const CELEBRATE_EMOJI = ['🎉', '✨', '🎊', '🙌'] as const;
 
 /**
  * Pixi v8 stage. WebGL is forced (§5.3 — ~95% support; don't auto-pick WebGPU).
@@ -45,6 +51,8 @@ export class Stage {
   private readonly cargo = new Map<number, Sprite>();
   /** Floating "ZONE n · count/cap" labels above each zone (ring + nested), by id. */
   private readonly labels = new Map<number, Text>();
+  /** Transient floating emoji (milestone emotes + celebrations), animated per frame. */
+  private readonly floats: Array<{ text: Text; x: number; y0: number; born: number }> = [];
   /** Enclosure outlines for nested chambers (redrawn each frame; world-space). */
   private readonly zoneRooms = new Graphics();
   private sections: SectionInfo[] = [];
@@ -231,6 +239,46 @@ export class Stage {
       }
     }
     this.drawLabels();
+    this.updateFloats();
+  }
+
+  /** Pop an emoji at a world position; it rises and fades out (language-neutral
+   *  flavor — §2 pillar #1: the game reads the same in every language). */
+  floatEmote(x: number, y: number, emoji: string): void {
+    const text = new Text({ text: emoji, style: { fontSize: 22, align: 'center' } });
+    text.anchor.set(0.5);
+    this.world.addChild(text);
+    this.floats.push({ text, x, y0: y, born: performance.now() });
+  }
+
+  /** A little burst of celebration emoji scattered around a point (contract done,
+   *  vault finished — the big moments). */
+  celebrate(x: number, y: number): void {
+    for (let i = 0; i < CELEBRATE_COUNT; i++) {
+      this.floatEmote(
+        x + (Math.random() * 2 - 1) * 60,
+        y + (Math.random() * 2 - 1) * 30,
+        CELEBRATE_EMOJI[i % CELEBRATE_EMOJI.length]!,
+      );
+    }
+  }
+
+  /** Advance the floating emotes: rise + fade, wrap-positioned and counter-scaled
+   *  (constant on-screen size) like the zone labels; destroyed when spent. */
+  private updateFloats(): void {
+    const now = performance.now();
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i]!;
+      const k = (now - f.born) / EMOTE_FLOAT_MS;
+      if (k >= 1) {
+        f.text.destroy();
+        this.floats.splice(i, 1);
+        continue;
+      }
+      f.text.position.set(this.wrapNear(f.x), f.y0 - EMOTE_RISE * k);
+      f.text.alpha = 1 - k;
+      f.text.scale.set(1 / this.camScale);
+    }
   }
 
   /** Floating zone labels for every zone (ring sections + nested chambers): a name +

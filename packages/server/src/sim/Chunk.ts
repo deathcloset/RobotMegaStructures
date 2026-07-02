@@ -45,6 +45,17 @@ const WANDER_BAND_H = 220;
  *  living worksite and a visiting player always finds something to build. */
 const VAULT_REBUILD_MS = 8000;
 
+/** Milestone emotes (§2 pillar #1: emoji-only, language-neutral delight). A robot
+ *  pops one at most this often, and usually only sometimes — sparse is charming,
+ *  constant is noise (and the cooldown bounds egress: events are milestone-bounded
+ *  and ~30 bytes each). */
+export const EMOTE_COOLDOWN_MS = 4000;
+const EMOTE_CHANCE = 0.35;
+const EMOTE_PLACE = ['🔩', '🔧', '✨', '👍'] as const;
+const EMOTE_WELD = ['⚡', '🔥', '🤝'] as const;
+const EMOTE_MINE = ['⛏️', '💎', '🪨'] as const;
+const EMOTE_CELEBRATE = ['🎉', '🥳', '🙌', '🎊'] as const;
+
 export interface ChunkEvent {
   name: DomainEvent;
   payload?: unknown;
@@ -392,7 +403,7 @@ export class Chunk {
           robot.engagedPieceId = piece.id;
           this.events.push({ name: DomainEvent.PieceReserved, payload: { pieceId: piece.id } });
         } else {
-          this.placePiece(piece, robot);
+          this.placePiece(piece, robot, now);
         }
       }
     } else if (action.kind === 'weld') {
@@ -452,6 +463,7 @@ export class Chunk {
           name: DomainEvent.ResourcePickedUp,
           payload: { robotId: robot.id, depositId: dep.id },
         });
+        this.maybeEmote(robot, EMOTE_MINE, now);
       }
     }
     robot.halt();
@@ -481,7 +493,7 @@ export class Chunk {
           piece.weldDoneAt = null;
           piece.reserveDeadline = now + WELD_RESERVATION_TTL_MS;
         } else if (piece.weldDoneAt !== null && now >= piece.weldDoneAt) {
-          this.completeWeld(piece);
+          this.completeWeld(piece, now);
         }
       }
     }
@@ -503,7 +515,7 @@ export class Chunk {
     this.events.push({ name: DomainEvent.PieceReleased, payload: { pieceId: piece.id } });
   }
 
-  private completeWeld(piece: Piece): void {
+  private completeWeld(piece: Piece, now: number): void {
     const holder = piece.holderId !== null ? this.robots.get(piece.holderId) : undefined;
     const welder = piece.welderId !== null ? this.robots.get(piece.welderId) : undefined;
     if (holder) {
@@ -515,16 +527,21 @@ export class Chunk {
     piece.holderId = null;
     piece.welderId = null;
     piece.weldDoneAt = null;
-    this.recordPlacement(piece);
+    this.recordPlacement(piece, now);
+    // Both partners glow a little (after recordPlacement, so a contract-completing
+    // weld celebrates 🎉 rather than double-popping).
+    if (holder) this.maybeEmote(holder, EMOTE_WELD, now);
+    if (welder) this.maybeEmote(welder, EMOTE_WELD, now);
   }
 
-  private placePiece(piece: Piece, robot: Robot): void {
+  private placePiece(piece: Piece, robot: Robot, now: number): void {
     piece.status = PieceStatus.Placed;
     robot.carrying = false;
-    this.recordPlacement(piece);
+    this.recordPlacement(piece, now);
+    this.maybeEmote(robot, EMOTE_PLACE, now);
   }
 
-  private recordPlacement(piece: Piece): void {
+  private recordPlacement(piece: Piece, now: number): void {
     // A nested vault's interior piece is built for its own sake — it doesn't advance
     // the section's contract (which would otherwise stall waiting on the chamber).
     if (piece.zoneId !== null) return;
@@ -533,7 +550,19 @@ export class Chunk {
       name: DomainEvent.PiecePlaced,
       payload: { pieceId: piece.id, placed: this.placed, total: this.sectionPieceTotal },
     });
-    this.checkContractComplete();
+    this.checkContractComplete(now);
+  }
+
+  /** Maybe pop a milestone emoji over a robot (§2 pillar #1: language-neutral
+   *  delight). Rate-limited per robot and usually probabilistic — celebrations pass
+   *  `chance: 1` so the big moments reliably land. */
+  private maybeEmote(robot: Robot, pool: readonly string[], now: number, chance = EMOTE_CHANCE) {
+    if (now < robot.nextEmoteAt || Math.random() > chance) return;
+    robot.nextEmoteAt = now + EMOTE_COOLDOWN_MS;
+    this.events.push({
+      name: DomainEvent.RobotEmote,
+      payload: { robotId: robot.id, e: pool[Math.floor(Math.random() * pool.length)]! },
+    });
   }
 
   /** Pieces in the SECTION's main contract (excludes nested-vault interior pieces). */
@@ -581,6 +610,15 @@ export class Chunk {
         zone.rebuildAt = null; // still building (or no interior contract) — not done
       } else if (zone.rebuildAt === null) {
         zone.rebuildAt = now + VAULT_REBUILD_MS; // just finished — start the beat
+        // The chamber celebrates: an event at the vault (the client bursts emoji
+        // there) and the crew inside cheers 🎉.
+        this.events.push({
+          name: DomainEvent.VaultCompleted,
+          payload: { zoneId: zone.id, x: zone.x, y: zone.y },
+        });
+        for (const r of this.robots.values()) {
+          if (r.insideZone === zone.id) this.maybeEmote(r, EMOTE_CELEBRATE, now, 1);
+        }
       } else if (now >= zone.rebuildAt) {
         for (const p of this.pieces.values()) if (p.zoneId === zone.id) p.reset();
         zone.rebuildAt = null; // fresh ghosts — build it again
@@ -588,7 +626,7 @@ export class Chunk {
     }
   }
 
-  private checkContractComplete(): void {
+  private checkContractComplete(now: number): void {
     const total = this.sectionPieceTotal;
     if (!this.completed && total > 0 && this.placed >= total) {
       this.completed = true;
@@ -596,6 +634,9 @@ export class Chunk {
         name: DomainEvent.ContractCompleted,
         payload: { placed: this.placed, total },
       });
+      // The whole section crew celebrates the finished contract 🎉 (chance 1 —
+      // the big moment reliably lands; the per-robot cooldown bounds the volume).
+      for (const r of this.robots.values()) this.maybeEmote(r, EMOTE_CELEBRATE, now, 1);
     }
   }
 

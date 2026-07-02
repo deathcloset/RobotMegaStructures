@@ -622,6 +622,33 @@ describe('vault worksite — a reason to enter (§4.4)', () => {
     expect(zone.count).toBe(0);
   });
 
+  it('celebrates a finished vault — VaultCompleted at the chamber (once per completion), the crew cheers', () => {
+    const { chunk, vaultGhost } = withVault(3);
+    const r = new Robot(-1, 'r', 200, 500, true);
+    r.isBuilder = true;
+    r.insideZone = 100;
+    chunk.addOccupant(r);
+    chunk.drainEvents();
+
+    const vaultEvents: unknown[] = [];
+    let residentCheered = false;
+    let now = 0;
+    for (let i = 0; i < 500; i++) {
+      now += 100;
+      chunk.step(0.1, now);
+      for (const e of chunk.drainEvents()) {
+        if (e.name === DomainEvent.VaultCompleted) vaultEvents.push(e.payload);
+        if (e.name === DomainEvent.RobotEmote && (e.payload as { robotId: number }).robotId === -1)
+          residentCheered = true;
+      }
+    }
+    expect(vaultGhost.status).not.toBe(undefined); // sanity: the loop ran
+    expect(vaultEvents.length).toBeGreaterThanOrEqual(2); // fired once per completion as it looped…
+    expect(vaultEvents.length).toBeLessThan(10); // …never per-tick while it sat complete
+    expect(vaultEvents[0]).toEqual({ zoneId: 100, x: 200, y: 500 }); // the chamber anchor
+    expect(residentCheered).toBe(true); // the crew inside popped an emoji
+  });
+
   it('loops the vault contract on its own — it rebuilds to fresh ghosts after a beat', () => {
     const { chunk, vaultGhost } = withVault(3);
     const r = new Robot(-1, 'r', 200, 500, true);
@@ -640,6 +667,39 @@ describe('vault worksite — a reason to enter (§4.4)', () => {
     }
     expect(wasBuilt).toBe(true); // the resident built it
     expect(sawReset).toBe(true); // …and it looped back to a ghost (independent of the section)
+  });
+});
+
+describe('emoji emotes — language-neutral flavor (§2 pillar #1)', () => {
+  it('the crew reliably celebrates a completed contract with an emoji', () => {
+    const { chunk, robot, piece } = setup(); // a one-piece contract
+    chunk.applyIntent(robot.id, interact(2_000_001));
+    run(chunk, () => robot.carrying);
+    chunk.applyIntent(robot.id, interact(1_000_001));
+    run(chunk, () => piece.status === PieceStatus.Placed);
+
+    const events = chunk.drainEvents();
+    expect(events.some((e) => e.name === DomainEvent.ContractCompleted)).toBe(true);
+    const emotes = events.filter((e) => e.name === DomainEvent.RobotEmote);
+    expect(emotes).toHaveLength(1); // the celebration (chance 1); the follow-up
+    // placement pop is suppressed by the fresh cooldown — no double emoji.
+    const p = emotes[0]!.payload as { robotId: number; e: string };
+    expect(p.robotId).toBe(robot.id);
+    expect(p.e.length).toBeGreaterThan(0); // an emoji, never words
+    expect(robot.nextEmoteAt).toBeGreaterThan(0); // cooldown armed for next time
+  });
+
+  it('the per-robot cooldown gates even a guaranteed celebration', () => {
+    const { chunk, robot, piece } = setup();
+    chunk.applyIntent(robot.id, interact(2_000_001));
+    run(chunk, () => robot.carrying);
+    robot.nextEmoteAt = Number.MAX_SAFE_INTEGER; // mid-cooldown from a recent pop
+    chunk.applyIntent(robot.id, interact(1_000_001));
+    run(chunk, () => piece.status === PieceStatus.Placed);
+
+    const events = chunk.drainEvents();
+    expect(events.some((e) => e.name === DomainEvent.ContractCompleted)).toBe(true); // the milestone fired…
+    expect(events.some((e) => e.name === DomainEvent.RobotEmote)).toBe(false); // …but the rate limit held
   });
 });
 

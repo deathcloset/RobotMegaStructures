@@ -11,7 +11,8 @@ capped interior chambers you opt into through a gate. Plus the gameplay: **surfa
 mining**, **commandable crews** (work-flags), the two-robot **weld**, looping contracts,
 reconnect-resume (§4.7), and the surface/sky aesthetic. Phases 0–2 (`v0.1.0`–`v0.3.0`)
 are all on **`main`**; the chunk grid + `settle` handoff are the proven seam for
-multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live in
+multi-server (the next infra arc). Protocol **v11** (v10 + the emoji
+emote/celebration events). Longer-horizon ideas live in
 [`IDEAS.md`](./IDEAS.md) (fuel, not roadmap — §2.5).
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.

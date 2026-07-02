@@ -64,6 +64,9 @@ export class Robot {
   blocked = false;
   /** Throttle for the "section full" nudge to the owning player while blocked. */
   blockedNotifyAt = 0;
+  /** Earliest time this robot may pop its next emoji (server-side rate limit for
+   *  the milestone emotes — keeps the flavor sparse and the egress noise-level). */
+  nextEmoteAt = 0;
   /** When this robot started waiting at the current checkpoint (0 = not waiting).
    *  A player is force-admitted after a bounded wait so they're never walled. */
   queuedSince = 0;

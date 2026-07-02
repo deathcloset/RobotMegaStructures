@@ -8,7 +8,9 @@ import {
   MessageType,
   PieceStatus,
   PROTOCOL_VERSION,
+  type RobotEmotePayload,
   RobotStatusBit,
+  type VaultCompletedPayload,
   wrapDeltaX,
 } from '@rms/shared';
 import { Hud } from './hud/Hud';
@@ -127,7 +129,7 @@ function onMessage(msg: AnyMessage): void {
   }
 }
 
-function onEvent(name: DomainEvent, _payload: unknown): void {
+function onEvent(name: DomainEvent, payload: unknown): void {
   if (name === DomainEvent.ContractCompleted) {
     showBanner('Contract complete! 🎉  Next blueprint incoming…', 6000);
   } else if (name === DomainEvent.ContractStarted) {
@@ -135,6 +137,17 @@ function onEvent(name: DomainEvent, _payload: unknown): void {
   } else if (name === DomainEvent.SectionFull) {
     // Queued at a full checkpoint — brief; you're force-admitted within a few seconds.
     showBanner('🦺 Section full — waiting at the checkpoint…', 2000);
+  } else if (name === DomainEvent.RobotEmote) {
+    // A robot pops an emoji at a milestone — emoji only, so it reads the same in
+    // every language. Only robots we can actually see get a float (natural AOI:
+    // `rendered` holds just the entities under our viewport).
+    const p = payload as RobotEmotePayload;
+    const r = rendered.find((e) => e.id === p.robotId);
+    if (r) stage.floatEmote(r.x, r.y - 26, p.e);
+  } else if (name === DomainEvent.VaultCompleted) {
+    // The chamber crew finished their interior contract — burst at the vault.
+    const p = payload as VaultCompletedPayload;
+    stage.celebrate(p.x, p.y);
   }
 }
 
