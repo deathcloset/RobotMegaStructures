@@ -1,4 +1,5 @@
 import {
+  DEPOSIT_MAX,
   DomainEvent,
   EntityKind,
   KLEPTO_LOOT_BIT,
@@ -8,6 +9,7 @@ import {
 } from '@rms/shared';
 import { describe, expect, it } from 'vitest';
 import { Chunk } from './Chunk';
+import { Deposit } from './Deposit';
 import { BEAM_OUT_MS, KLEPTO_EDGE_MARGIN, KLEPTO_MAX_LIFE_MS } from './Klepto';
 import { NestedZone } from './NestedZone';
 import { Piece } from './Piece';
@@ -148,24 +150,74 @@ describe('klepto incursion — the theft (§3 slapstick)', () => {
     expect(events.some((e) => e.name === DomainEvent.KleptoCaptured)).toBe(false);
   });
 
-  it('retargets if its piece resets under it, and shrugs off a foiled pry', () => {
+  it('re-picks another stealable piece when its target vanishes mid-skitter', () => {
+    // TWO placed pieces (both built through the real path), so a vanished target
+    // has a live alternative to retarget onto.
+    const { chunk, placedPiece, ghostPiece, builder, now } = stealableChunk();
+    chunk.addPiece(new Piece(1_000_003, 'p3', 620, 820, false)); // keep it incomplete
+    builder.x = 480;
+    let t = now;
+    chunk.applyIntent(9, interact(2_000_001));
+    for (let i = 0; i < 100 && !builder.carrying; i++) {
+      t += 100;
+      chunk.step(0.1, t);
+    }
+    chunk.applyIntent(9, interact(ghostPiece.id));
+    for (let i = 0; i < 100 && ghostPiece.status !== PieceStatus.Placed; i++) {
+      t += 100;
+      chunk.step(0.1, t);
+    }
+    builder.x = 60;
+    builder.halt();
+    chunk.drainEvents();
+    expect(chunk.placedCount).toBe(2);
+
+    chunk.spawnKlepto(t, 6_000_003);
+    let yanked = false;
+    const { events } = runKlepto(
+      chunk,
+      t,
+      (names) => names.includes(DomainEvent.KleptoStole),
+      700,
+      (snap) => {
+        if (!yanked && snap && stageOf(snap) === KleptoStage.Skittering) {
+          yanked = true;
+          // Yank piece 1 the moment it starts skittering: whichever piece it had
+          // picked, the only theft left on the table is piece 2.
+          placedPiece.reset();
+        }
+      },
+    );
+    const stole = events.find((e) => e.name === DomainEvent.KleptoStole);
+    expect(stole).toBeDefined(); // it re-picked and the theft still landed…
+    expect((stole!.payload as { pieceId: number }).pieceId).toBe(ghostPiece.id); // …on piece 2
+  });
+
+  it('a pry foiled at the last moment steals nothing, keeps the books, and shrugs 🤷', () => {
     const { chunk, placedPiece, now } = stealableChunk();
-    chunk.spawnKlepto(now, 6_000_003);
-    // Yank the only stealable piece the moment the klepto starts skittering.
+    chunk.spawnKlepto(now, 6_000_015);
+    let yanked = false;
     const { events } = runKlepto(
       chunk,
       now,
       (names) => names.includes(DomainEvent.KleptoEscaped),
       700,
       (snap) => {
-        if (snap && stageOf(snap) === KleptoStage.Skittering) {
-          placedPiece.reset(); // contract reset stole its prize
+        if (!yanked && snap && stageOf(snap) === KleptoStage.Prying) {
+          yanked = true; // the piece vanishes DURING the pry (a reset under it)
+          placedPiece.reset();
         }
       },
     );
-    expect(events.some((e) => e.name === DomainEvent.KleptoStole)).toBe(false);
-    // (No placed-invariant check here: the hand-called piece.reset() bypasses the
-    // contract counters on purpose — a real reset goes through advanceContract.)
+    expect(yanked).toBe(true); // the pry actually started
+    expect(events.some((e) => e.name === DomainEvent.KleptoStole)).toBe(false); // guard held
+    // The pry-moment guard is what keeps `placed` from going negative: the steal's
+    // decrement must NOT fire on a piece that's no longer Placed.
+    expect(chunk.placedCount).toBe(1);
+    const shrug = events.find(
+      (e) => e.name === DomainEvent.RobotEmote && (e.payload as { e: string }).e === '🤷',
+    );
+    expect(shrug).toBeDefined(); // foiled by circumstance — shrug, leave
   });
 });
 
@@ -356,6 +408,92 @@ describe('klepto incursion — the chase and the pincer', () => {
     expectPlacedInvariant(chunk); // restore was skipped — counted exactly once
   });
 
+  it('the panic dodge keeps a stalked klepto moving every tick (Fleeing only)', () => {
+    const { chunk, now } = stealableChunk();
+    const stalker = new Robot(2, 's', 900, 820, false, 2);
+    chunk.addOccupant(stalker);
+    chunk.spawnKlepto(now, 6_000_016);
+
+    // While it PRIES with the stalker looming just outside capture range, it is
+    // brazen: it holds still (no dodge outside Fleeing — decision #1 in the spec).
+    let pryFrozenTicks = 0;
+    let fleeMoves = 0;
+    let fleeTicks = 0;
+    let prev: { x: number; y: number; st: number } | null = null;
+    runKlepto(
+      chunk,
+      now,
+      (names) => names.includes(DomainEvent.KleptoEscaped),
+      700,
+      (snap) => {
+        if (!snap) return;
+        const st = stageOf(snap);
+        if (st === KleptoStage.Prying || st === KleptoStage.Fleeing) {
+          // The stalker looms 40 away: inside panic range (90), outside capture (36).
+          stalker.x = snap.x + 40;
+          stalker.y = snap.y;
+        }
+        if (prev && prev.st === st) {
+          const moved = prev.x !== snap.x || prev.y !== snap.y;
+          if (st === KleptoStage.Prying && !moved) pryFrozenTicks += 1;
+          if (st === KleptoStage.Fleeing) {
+            fleeTicks += 1;
+            if (moved) fleeMoves += 1;
+          }
+        }
+        prev = { x: snap.x, y: snap.y, st };
+      },
+    );
+    expect(pryFrozenTicks).toBeGreaterThan(5); // brazen: held still mid-pry, stalked
+    // Panic (Fleeing only): a stalker inside panic range means it NEVER stands
+    // still — no taunt pause survives being loomed over. Without the panic dash
+    // the dash-pause rhythm would freeze it for whole pauses (500–1200 ms).
+    expect(fleeTicks).toBeGreaterThan(10);
+    expect(fleeMoves).toBe(fleeTicks); // moved on every single stalked flee tick
+  });
+
+  it('never steals while the contract is celebrating, and leaves empty-handed', () => {
+    // A one-piece contract completed through the real path: hasStealable must be
+    // false BOTH during the celebration (isComplete) and after the reset (Ghosts).
+    const chunk = new Chunk(0);
+    const p = new Robot(9, 'p', 480, 820, false, 9);
+    chunk.addOccupant(p);
+    chunk.addResource(new Resource(2_000_001, 'd', 480, 820));
+    const piece = new Piece(1_000_001, 'pc', 520, 820, false);
+    chunk.addPiece(piece);
+    let t = 1000;
+    chunk.applyIntent(9, interact(2_000_001));
+    for (let i = 0; i < 100 && !p.carrying; i++) {
+      t += 100;
+      chunk.step(0.1, t);
+    }
+    chunk.applyIntent(9, interact(piece.id));
+    for (let i = 0; i < 100 && piece.status !== PieceStatus.Placed; i++) {
+      t += 100;
+      chunk.step(0.1, t);
+    }
+    expect(chunk.isComplete).toBe(true); // mid-celebration
+    expect(chunk.hasStealable).toBe(false); // the guard under test
+    p.x = 60;
+    p.halt();
+    chunk.drainEvents();
+
+    chunk.spawnKlepto(t, 6_000_017);
+    // Run past the (quick, empty-handed) escape AND the contract's own 6 s reset —
+    // the two must both happen, independently of each other.
+    const { events } = runKlepto(
+      chunk,
+      t,
+      (names) =>
+        names.includes(DomainEvent.KleptoEscaped) && names.includes(DomainEvent.ContractStarted),
+    );
+    expect(events.some((e) => e.name === DomainEvent.KleptoStole)).toBe(false);
+    expect(events.some((e) => e.name === DomainEvent.KleptoEscaped)).toBe(true);
+    // The contract loop rolled on untouched underneath the incursion.
+    expect(events.some((e) => e.name === DomainEvent.ContractStarted)).toBe(true);
+    expectPlacedInvariant(chunk);
+  });
+
   it('stays clamped inside its section for the whole episode', () => {
     const { chunk, now } = stealableChunk();
     const chaser = new Robot(2, 'c', 900, 820, false, 2);
@@ -476,6 +614,40 @@ describe('klepto incursion — chase intents and the bot posse', () => {
       chunk.step(0.1, t);
     }
     for (const r of builders) expect(r.pendingAction?.kind).not.toBe('chase');
+  });
+
+  it('never drafts a carrying builder or one mid-action (they finish what they hold)', () => {
+    const { chunk, now } = stealableChunk();
+    // A carrying builder frozen on its dawdle: pendingAction null (so ONLY the
+    // carrying check can exclude it), never acts on its own.
+    const laden = new Robot(-30, 'laden', 700, 820, true);
+    laden.isBuilder = true;
+    laden.carrying = true;
+    laden.nextActionAt = Number.MAX_SAFE_INTEGER;
+    chunk.addOccupant(laden);
+    // A prospector mid-walk to a far vein: pendingAction stays 'mine' for ~15 s.
+    chunk.addDeposit(new Deposit(3_000_001, 'vein', 964, 880, DEPOSIT_MAX));
+    const miner = new Robot(-31, 'miner', 70, 820, true);
+    miner.isBuilder = true;
+    chunk.addOccupant(miner);
+    miner.pendingAction = { kind: 'mine', targetId: 3_000_001 };
+
+    chunk.spawnKlepto(now, 6_000_018);
+    let ticks = 0;
+    runKlepto(
+      chunk,
+      now,
+      () => ticks >= 140, // ~14 s window — the miner is still en route the whole time
+      140,
+      () => {
+        ticks += 1;
+        expect(laden.pendingAction?.kind ?? 'none').not.toBe('chase'); // carrying → never drafted
+        if (miner.pendingAction !== null) {
+          expect(miner.pendingAction.kind).toBe('mine'); // mid-action → never overwritten
+        }
+      },
+    );
+    expect(laden.carrying).toBe(true); // untouched throughout
   });
 
   it('a disconnecting chaser deadlocks nothing', () => {
