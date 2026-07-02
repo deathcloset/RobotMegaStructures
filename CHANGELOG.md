@@ -20,8 +20,58 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ## Unreleased — Phase 2, continued 🚧
 
-Building on the v0.3.0 architecture (most recent first). Up next: a real worksite
-inside the nested **vault**, then a dedicated **delivery-swarm** robot type.
+Building on the v0.3.0 architecture (most recent first).
+
+### Slice 9 — delivery-swarm couriers 🚚
+
+The work-flag grows a **logistics** arm: plant it and a **swarm of couriers** ferries
+material to that section from across the planet and builds it — set-and-forget supply
+lines. (Builders rally to *mine* near the flag; couriers *deliver* to it — two robot
+types, one command.) With no flag, couriers just help build their own section.
+
+- **New courier role** (`isCourier`, `SEED_COURIERS` per section): a courier grabs a load
+  from the nearest depot wherever it is, carries it across the checkpoints to the flagged
+  section, delivers (builds a ghost), then heads back out to source another. Distinct from
+  a builder, who migrates *empty* and mines.
+- **Planet-wide flag awareness**: `ChunkRegistry.flagSection()` finds the section holding
+  a work-flag; `SimLoop` passes it into each section's step, so couriers everywhere
+  converge on your flag. (One flag served for now; nearest-flag routing is a future
+  refinement.)
+- **Visible without a wire change** (still v10): a courier is just an NPC carrying a load
+  across boundaries toward your flag — the cargo marker already rides the snapshot, and
+  `isCourier` is server-internal.
+- **Rides the deadlock-safe checkpoints**: a ferrying courier queues at a full checkpoint
+  and gives up / turns back like any bot, so supply lines never gridlock.
+- **Proven**: unit (98 tests, +4) — `flagSection` detection, a courier ferrying a load
+  across two sections to the flagged one and building it, a courier picking up + setting
+  its heading, and a no-flag courier building locally. Wire (live server,
+  `SEED_COURIERS=3`): planting a flag grew that section's population as couriers ferried
+  in (5 → 8 → 11, loads in hand) while the planet total held steady.
+
+### Slice 8 — the vault worksite 🏗️
+
+The nested **vault** (v0.3.0) gets a **reason to enter**: its own interior **contract**.
+A small row of ghost pieces + a depot float up in the chamber; the resident crew builds
+them and a visiting player can join in — all without touching the section's contract on
+the floor outside.
+
+- **Zone-scoped build loop** (server-only): pieces and depots carry an internal `zoneId`.
+  A crew *inside* the vault builds only the vault's ghosts from the vault's depot; a crew
+  on the section floor builds only the section contract and ignores the chamber. Welds,
+  work-flags, and prospecting stay section-floor concerns.
+- **Doesn't stall the section**: vault pieces are counted separately, so the section
+  contract completes + loops on its own even if nobody ever enters the vault.
+- **The vault loops on its own** (`advanceVaults`, faster than the section): once its
+  ghosts are built it holds a brief beat, then resets — so the chamber is always a living
+  worksite with a fresh window to help. The resident crew are now builders.
+- **No protocol change** (still v10): vault pieces/depot ride the existing entity path as
+  ordinary pieces/resources at chamber positions; `zoneId` is server-internal.
+- **Proven**: unit (94 tests, +6) — a player enters and builds the vault piece without
+  leaving or touching the section contract, a resident builds it autonomously, an outside
+  builder ignores the vault, the section completes without the vault, the vault loops
+  (rebuilds after a beat), and tapping floor work leaves the chamber. Wire (live server):
+  the resident crew built the chamber's 3 interior pieces while the six section contracts
+  progressed independently.
 
 ---
 

@@ -36,6 +36,10 @@ export class Robot {
    *  the convenient depots (it falls back to a depot if no vein is available). The
    *  seed of distinct robot roles for the crews/swarms slice. */
   prefersMining = false;
+  /** A delivery-swarm courier (§ Phase 2 logistics): set-and-forget, it ferries
+   *  material to the work-flag's section and builds there (or builds locally when no
+   *  flag is planted). Distinct from a builder, who migrates empty and mines. */
+  isCourier = false;
   /** Builder AI: earliest time it'll pick its next action — a deliberate dawdle
    *  so AI bots are visibly less efficient than players. */
   nextActionAt = 0;

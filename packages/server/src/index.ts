@@ -13,7 +13,7 @@ import { log } from './log';
 import { Metrics } from './metrics/Metrics';
 import { handleMetrics } from './metrics/metricsServer';
 import { WsGateway } from './net/WsGateway';
-import { seedContract } from './sim/blueprint';
+import { seedContract, seedVaultWorksite } from './sim/blueprint';
 import type { Chunk } from './sim/Chunk';
 import { ChunkRegistry } from './sim/ChunkRegistry';
 import { NestedZone } from './sim/NestedZone';
@@ -92,6 +92,7 @@ httpServer.listen(config.port, config.host, () => {
     seedRobots: config.seedRobots,
     seedBuilders: config.seedBuilders,
     seedMiners: config.seedMiners,
+    seedCouriers: config.seedCouriers,
     sections: CHUNK_COLS,
     sectionCaps: sectionCaps.join('/'),
     nestedZone: `§${NESTED_ZONE_SECTION + 1} cap ${config.nestedZoneCap}`,
@@ -104,14 +105,15 @@ httpServer.listen(config.port, config.host, () => {
 
 /** Seed a section's NPC crew (negative ids, unique planet-wide) so every section is
  *  a living worksite: the first `seedBuilders` run the build loop autonomously (the
- *  first `seedMiners` of those prospect the ore veins); the rest wander their
- *  section as ambiance. */
+ *  first `seedMiners` of those prospect the ore veins); the next `seedCouriers` are
+ *  delivery-swarm couriers (ferry material to a work-flag); the rest wander as ambiance. */
 function seedRobots(chunk: Chunk): void {
   const span = chunk.x1 - chunk.x0;
   // Population scales with this section's cap, kept a margin below it so there's
   // always room for visitors + roaming crews: tight zones are sparse, roomy ones busy.
   const pop = Math.max(2, Math.min(config.seedRobots, chunk.capacity - 3));
   const builders = Math.min(config.seedBuilders, pop);
+  const couriers = Math.min(config.seedCouriers, pop - builders);
   for (let i = 0; i < pop; i++) {
     nextNpcId += 1;
     const y = chunk.groundY - 20 - Math.random() * 200;
@@ -127,6 +129,9 @@ function seedRobots(chunk: Chunk): void {
       robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
       robot.prefersMining = i < config.seedMiners; // some prospect the veins
       robot.canMigrate = true; // roaming work crews — travel between sections
+    } else if (i < builders + couriers) {
+      robot.isCourier = true; // delivery swarm — ferries material to the work-flag
+      robot.speed = ROBOT_SPEED * 0.72;
     } else {
       robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
     }
@@ -135,8 +140,9 @@ function seedRobots(chunk: Chunk): void {
 }
 
 /** Seed a nested zone into a parent section: an elevated capped chamber with a gate
- *  on the surface, plus a small resident crew (cap − 1, clamped) so a lone visitor
- *  takes the last slot and a second one queues at the gate. */
+ *  on the surface, its own interior worksite (a reason to enter), and a small resident
+ *  crew (cap − 1, clamped) that builds it — so a lone visitor takes the last slot and
+ *  a second one queues at the gate. */
 function seedNestedZone(parent: Chunk, cap: number): void {
   const zone = new NestedZone(
     NESTED_ZONE_ID,
@@ -149,6 +155,7 @@ function seedNestedZone(parent: Chunk, cap: number): void {
     parent.groundY - 18, // the gate stands on the surface below
   );
   parent.addZone(zone);
+  seedVaultWorksite(parent, zone, repo); // ghosts + a depot inside the chamber
   const residents = Math.max(0, Math.min(cap - 1, 4));
   for (let i = 0; i < residents; i++) {
     nextNpcId += 1;
@@ -159,7 +166,9 @@ function seedNestedZone(parent: Chunk, cap: number): void {
       zone.y,
       true,
     );
-    r.insideZone = zone.id; // a resident worker living in the chamber
+    r.insideZone = zone.id; // a resident worker living in the chamber…
+    r.isBuilder = true; // …who builds the vault's interior contract
+    r.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
     parent.addOccupant(r);
     zone.occupants.add(r.id);
   }

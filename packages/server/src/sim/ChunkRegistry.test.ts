@@ -1,7 +1,9 @@
-import { CHUNK_COLS, GROUND_Y } from '@rms/shared';
+import { CHUNK_COLS, GROUND_Y, MessageType, PieceStatus } from '@rms/shared';
 import { describe, expect, it } from 'vitest';
 import { ChunkRegistry } from './ChunkRegistry';
 import { NestedZone } from './NestedZone';
+import { Piece } from './Piece';
+import { Resource } from './Resource';
 import { Robot } from './Robot';
 
 // The grid is CHUNK_COLS sections of SECTION_WIDTH (1024) tiling the planet.
@@ -202,5 +204,46 @@ describe('ChunkRegistry — roaming work crews', () => {
     }
 
     expect(reg.chunkOfRobot(-1)).toBe(reg.get(0)); // never wandered off
+  });
+});
+
+describe('ChunkRegistry — delivery-swarm logistics', () => {
+  const flagAt = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_FLAG, tx, ty }) as const;
+
+  it('finds the section holding a work-flag (where the swarm delivers)', () => {
+    const reg = new ChunkRegistry();
+    expect(reg.flagSection()).toBeNull();
+    const p = new Robot(1, 'p', reg.get(3)!.centerX, 800, false, 1);
+    reg.get(3)!.addOccupant(p);
+    reg.get(3)!.applyIntent(1, flagAt(reg.get(3)!.centerX, 820));
+    expect(reg.flagSection()).toBe(3);
+  });
+
+  it('a courier ferries material from its section to the flagged one and builds there', () => {
+    const reg = new ChunkRegistry(); // 6 sections, no cap
+    // Destination §2: plant a flag and leave a ghost to build.
+    const player = new Robot(1, 'p', reg.get(2)!.centerX, 800, false, 1);
+    reg.get(2)!.addOccupant(player);
+    reg.get(2)!.applyIntent(1, flagAt(reg.get(2)!.centerX, 820));
+    const destGhost = new Piece(1_002_500, 'dg', reg.get(2)!.centerX, 820, false);
+    reg.get(2)!.addPiece(destGhost);
+    // Source §0: a depot and the courier.
+    reg.get(0)!.addResource(new Resource(2_000_500, 'sd', reg.get(0)!.centerX, 820));
+    const courier = new Robot(-1, 'c', reg.get(0)!.centerX, 820, true);
+    courier.isCourier = true;
+    reg.get(0)!.addOccupant(courier);
+
+    let now = 0;
+    let carriedAcross = false;
+    for (let i = 0; i < 1500 && destGhost.status !== PieceStatus.Placed; i++) {
+      now += 100;
+      const fs = reg.flagSection();
+      for (const c of reg.all()) c.step(0.1, now, fs);
+      reg.settle(now);
+      if (courier.carrying && reg.chunkOfRobot(-1) !== reg.get(0)) carriedAcross = true;
+    }
+    expect(carriedAcross).toBe(true); // carried a load out of its home section…
+    expect(destGhost.status).toBe(PieceStatus.Placed); // …to the flagged section, and built it
+    expect(reg.chunkOfRobot(-1)).toBe(reg.get(2)); // the courier delivered at the flag
   });
 });

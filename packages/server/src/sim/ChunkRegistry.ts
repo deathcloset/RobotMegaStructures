@@ -122,6 +122,14 @@ export class ChunkRegistry {
     this.chunkOfRobot(robotId)?.removeOccupant(robotId);
   }
 
+  /** Where the delivery swarm should carry material: a section holding a work-flag
+   *  (searched planet-wide), or null if none is planted. The first flag found wins —
+   *  couriers serve one flag for now (§ Phase 2 logistics). */
+  flagSection(): number | null {
+    for (const c of this.chunks) if (c.hasFlags) return c.id;
+    return null;
+  }
+
   /** How many bots are currently held (queued) at a checkpoint — for the metrics
    *  readout, so checkpoint pressure is observable. */
   queuedCount(): number {

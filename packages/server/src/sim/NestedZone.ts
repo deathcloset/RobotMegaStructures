@@ -18,6 +18,10 @@ import type { SectionInfo } from '@rms/shared';
 export class NestedZone {
   /** Robot ids currently inside; kept in sync by the Chunk on enter/leave/handoff. */
   readonly occupants = new Set<number>();
+  /** When this chamber's interior contract should reset to fresh ghosts after being
+   *  finished (null = not currently complete) — the vault loops on its own, faster than
+   *  the section, so there's always work inside and a player always gets a window. */
+  rebuildAt: number | null = null;
 
   constructor(
     /** Zone id — disjoint from ring section ids (which are 0..CHUNK_COLS-1). */
