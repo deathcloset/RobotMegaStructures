@@ -47,8 +47,15 @@ const samples: AnyMessage[] = [
       },
       { id: 1_000_001, kind: EntityKind.Piece, x: 64, y: 64, status: PieceStatus.Placed },
       { id: 2_000_001, kind: EntityKind.Resource, x: 32, y: 96, status: 0 },
+      // A klepto mid-flee with the loot bit set (stage 3 | bit 3 = 11).
+      { id: 6_000_000, kind: EntityKind.Klepto, x: 700.5, y: 880, status: 11 },
     ],
   },
+  // The klepto incursion events (v12) ride the generic S_EVENT payload path.
+  { t: MessageType.S_EVENT, name: 19, payload: { section: 2, x: 2560, y: 896 } },
+  { t: MessageType.S_EVENT, name: 20, payload: { pieceId: 1_000_001, x: 64, y: 64 } },
+  { t: MessageType.S_EVENT, name: 21, payload: { x: 700, y: 880 } },
+  { t: MessageType.S_EVENT, name: 22, payload: { x: 700, y: 880 } },
   {
     t: MessageType.S_SNAPSHOT_DELTA,
     tick: 6,

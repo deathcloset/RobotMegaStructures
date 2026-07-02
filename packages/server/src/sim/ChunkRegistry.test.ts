@@ -263,6 +263,81 @@ describe('ChunkRegistry — work-flag persistence (§ Phase 2 crews/logistics)',
   });
 });
 
+describe('ChunkRegistry — the klepto spawner (§3 slapstick)', () => {
+  /** Give a section something stealable (status set directly — these tests only
+   *  exercise spawn placement, never a completed theft). */
+  function makeStealable(reg: ChunkRegistry, section: number): void {
+    const p = new Piece(1_000_100 + section, `s${section}`, reg.get(section)!.centerX, 820, false);
+    p.status = PieceStatus.Placed;
+    reg.get(section)!.addPiece(p);
+  }
+  const kleptoCount = (reg: ChunkRegistry) => {
+    let n = 0;
+    for (const c of reg.all()) if (c.hasKlepto) n += 1;
+    return n;
+  };
+
+  it('waits out the boot delay, spawns exactly one, and never a second while one lives', () => {
+    const reg = new ChunkRegistry();
+    for (let s = 0; s < CHUNK_COLS; s++) makeStealable(reg, s);
+    reg.advanceKleptoSpawner(1000, 60_000, 0); // arms the boot delay
+    reg.advanceKleptoSpawner(2000, 60_000, 0);
+    expect(kleptoCount(reg)).toBe(0); // still inside KLEPTO_FIRST_DELAY_MS
+    reg.advanceKleptoSpawner(1000 + 46_000, 60_000, 0);
+    expect(kleptoCount(reg)).toBe(1); // the first landing
+    reg.advanceKleptoSpawner(1000 + 47_000, 60_000, 0);
+    reg.advanceKleptoSpawner(1000 + 200_000, 60_000, 0);
+    expect(kleptoCount(reg)).toBe(1); // one alive planet-wide, ever
+  });
+
+  it('prefers a section with a live player, and skips entirely with nothing stealable', () => {
+    const reg = new ChunkRegistry();
+    reg.advanceKleptoSpawner(1000, 60_000, 0);
+    reg.advanceKleptoSpawner(1000 + 46_000, 60_000, 0);
+    expect(kleptoCount(reg)).toBe(0); // nothing stealable anywhere → no show
+
+    for (let s = 0; s < CHUNK_COLS; s++) makeStealable(reg, s);
+    reg.get(2)!.addOccupant(new Robot(1, 'p', reg.get(2)!.centerX, 800, false, 1)); // the audience
+    reg.advanceKleptoSpawner(1000 + 46_000 + 21_000, 60_000, 0); // past the retry
+    expect(kleptoCount(reg)).toBe(1);
+    expect(reg.get(2)!.hasKlepto).toBe(true); // the show lands where the audience is
+  });
+
+  it('schedules the next episode a quiet gap AFTER the previous one ends', () => {
+    const reg = new ChunkRegistry();
+    for (let s = 0; s < CHUNK_COLS; s++) makeStealable(reg, s);
+    reg.advanceKleptoSpawner(0, 30_000, 0); // arm
+    reg.advanceKleptoSpawner(46_000, 30_000, 0); // spawn #1
+    expect(kleptoCount(reg)).toBe(1);
+    // Drive the episode to its natural end (escape ≤ 45s + beam), the spawner
+    // running every tick like the real SimLoop.
+    let now = 46_000;
+    while (kleptoCount(reg) > 0 && now < 46_000 + 60_000) {
+      now += 100;
+      reg.advanceKleptoSpawner(now, 30_000, 0);
+      for (const c of reg.all()) c.step(0.1, now);
+    }
+    expect(kleptoCount(reg)).toBe(0);
+    const endedAt = now;
+    reg.advanceKleptoSpawner(endedAt, 30_000, 0); // notices the end → arms the gap
+    reg.advanceKleptoSpawner(endedAt + 29_000, 30_000, 0);
+    expect(kleptoCount(reg)).toBe(0); // still inside the quiet gap
+    reg.advanceKleptoSpawner(endedAt + 31_000, 30_000, 0);
+    expect(kleptoCount(reg)).toBe(1); // the next episode
+  });
+
+  it('settle() ignores the klepto entirely — no cap slot, no handoff', () => {
+    const reg = new ChunkRegistry(1); // every section caps at ONE robot
+    makeStealable(reg, 0);
+    reg.get(0)!.addOccupant(new Robot(-1, 'resident', 100, 800, true)); // section 0 full
+    reg.get(0)!.spawnKlepto(1000, 6_000_000);
+    expect(reg.get(0)!.isFull).toBe(true); // the klepto didn't tip the count
+    expect(reg.get(0)!.occupantCount).toBe(1);
+    reg.settle(2000);
+    expect(reg.get(0)!.hasKlepto).toBe(true); // still here, never handed off
+  });
+});
+
 describe('ChunkRegistry — delivery-swarm logistics', () => {
   const flagAt = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_FLAG, tx, ty }) as const;
 

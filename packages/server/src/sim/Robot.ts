@@ -11,7 +11,11 @@ export type PendingAction =
   /** Walk to a nested zone's gate, then enter it (or queue at the gate if it's at
    *  its cap — a nested zone is a hard cap, since entry is opt-in). `targetId` is
    *  the gate's entity id. */
-  | { kind: 'enter'; targetId: number };
+  | { kind: 'enter'; targetId: number }
+  /** Chase the klepto (§3 slapstick): a live pursuit re-targeted every tick; it
+   *  never "completes" — capture is positional, decided by the chunk's klepto
+   *  logic. Self-clears the tick the klepto is gone or un-chaseable. */
+  | { kind: 'chase'; targetId: number };
 
 export class Robot {
   readonly id: number;

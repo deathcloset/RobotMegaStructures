@@ -7,6 +7,7 @@ import {
   type EntitySnapshot,
   GROUND_Y,
   INTERACT_RANGE,
+  KleptoStage,
   MessageType,
   MINE_DURATION_MS,
   NESTED_ZONE_HALF_W,
@@ -17,12 +18,36 @@ import {
   WELD_RESERVATION_TTL_MS,
   WORLD_HEIGHT,
   WORLD_WIDTH,
+  wrapDeltaX,
   wrappedDistance,
   wrapX,
 } from '@rms/shared';
 import { driveBuilder, driveCourier } from './crewAi';
 import type { Deposit } from './Deposit';
 import { Flag } from './Flag';
+import {
+  BEAM_OUT_MS,
+  BEAM_RISE_SPEED,
+  CAPTURE_RANGE,
+  EMOTE_TAUNT,
+  EMOTE_TAUNT_COOLDOWN_MS,
+  KLEPTO_BOT_CHASERS,
+  KLEPTO_DASH_MAX,
+  KLEPTO_DASH_MIN,
+  KLEPTO_DASH_SPEED,
+  KLEPTO_DROP_H,
+  KLEPTO_EDGE_MARGIN,
+  KLEPTO_FALL_SPEED,
+  KLEPTO_HOME_BIAS,
+  KLEPTO_MIN_FLEE_MS,
+  KLEPTO_PANIC_RANGE,
+  KLEPTO_RECRUIT_MS,
+  KLEPTO_SKITTER_SPEED,
+  KLEPTO_TAUNT_PAUSE_MIN_MS,
+  KLEPTO_TAUNT_PAUSE_SPAN_MS,
+  Klepto,
+  PRY_DURATION_MS,
+} from './Klepto';
 import type { NestedZone } from './NestedZone';
 import type { Piece } from './Piece';
 import type { Resource } from './Resource';
@@ -95,6 +120,10 @@ export class Chunk {
   /** Nested zones (§4.4): capped interior chambers within this section. Their
    *  occupants stay in `robots` (still simulated); a zone just tracks membership. */
   private readonly zones: NestedZone[] = [];
+  /** The section's klepto (§3 slapstick), at most one — and at most one planet-wide
+   *  (the registry's spawner invariant). NOT a robot: no OSHA cap slot, no handoff,
+   *  no zone membership; it lives and dies inside this section. */
+  private klepto: Klepto | null = null;
   private readonly events: ChunkEvent[] = [];
   private placed = 0;
   private completed = false;
@@ -230,6 +259,23 @@ export class Chunk {
     return this.flags.size > 0;
   }
 
+  /** A klepto is currently in this section — the registry's one-alive scan. */
+  get hasKlepto(): boolean {
+    return this.klepto !== null;
+  }
+
+  /** Anything here worth stealing? Only plain section-floor Placed pieces qualify —
+   *  weld pieces and vault interiors are guarded out (their bookkeeping stays out of
+   *  the blast radius), and a completed contract is mid-celebration (stealing then
+   *  would corrupt the `placed` counter). */
+  get hasStealable(): boolean {
+    if (this.completed) return false;
+    for (const p of this.pieces.values()) {
+      if (p.status === PieceStatus.Placed && !p.weld && p.zoneId === null) return true;
+    }
+    return false;
+  }
+
   /** Contract progress (§3) — pieces placed of the blueprint total (section contract;
    *  a nested vault's interior pieces are counted separately). */
   get pieceCount(): number {
@@ -289,6 +335,16 @@ export class Chunk {
         robot.setTarget(zone.gateX, zone.gateY);
         robot.pendingAction = { kind: 'enter', targetId };
       }
+      return;
+    }
+    // Tap the klepto to join the chase (§3 slapstick): a live pursuit, no
+    // reservation — capture is pure proximity, decided in advanceKlepto. Carrying
+    // robots may chase too (capture is positional, not hands).
+    if (this.klepto && targetId === this.klepto.id) {
+      if (!this.klepto.chaseable) return; // still landing / already beaming out
+      this.leaveZone(robot); // chasing is floor work — the flag/floor rule
+      robot.setTarget(this.klepto.x, this.klepto.y);
+      robot.pendingAction = { kind: 'chase', targetId };
       return;
     }
     // Tapping the vault's OWN depot/ghosts keeps you inside to work it; tapping
@@ -362,6 +418,9 @@ export class Chunk {
       }
     }
     this.advanceWelds(now);
+    // The klepto acts after welds and before contract logic, so a same-tick steal
+    // is seen by the contract counters in a consistent state.
+    this.advanceKlepto(now, dt);
     for (const dep of this.deposits.values()) dep.regen(dt); // veins slowly refill
     this.advanceContract(now);
   }
@@ -441,6 +500,19 @@ export class Chunk {
       robot.setTarget(this.zoneSlotX(zone), zone.y); // ascend into the chamber
       robot.pendingAction = null;
       return; // keep the ascend target (don't fall through to halt)
+    } else if (action.kind === 'chase') {
+      // Live pursuit: re-aim at the klepto every tick. There is nothing to
+      // hand-shake, reserve, or release — the action self-clears the moment the
+      // klepto is gone or un-chaseable, and capture itself is positional (decided
+      // in advanceKlepto). Never falls through to the shared halt().
+      const k = this.klepto;
+      if (!k || k.id !== action.targetId || !k.chaseable) {
+        robot.pendingAction = null;
+        robot.halt();
+        return;
+      }
+      robot.setTarget(k.x, k.y);
+      return;
     } else {
       // 'mine': dig an ore vein for a while, then carry off a load (§ Phase 2).
       const dep = this.deposits.get(action.targetId);
@@ -640,6 +712,283 @@ export class Chunk {
     }
   }
 
+  // ── The klepto incursion (§3 — the first slapstick system) ─────────────────
+  // The Klepto entity holds its own state; every mutation of chunk state happens
+  // here (the Piece/advanceWelds split). Nothing below holds a robot reference
+  // across ticks and no robot holds klepto engagement state, so no deadlock cycle
+  // can form; `lifeDeadline` is the master TTL on the whole episode (§4.7).
+
+  /** Drop a klepto into this section (the registry's spawner, and tests). The
+   *  descent from the sky is the telegraph — visible for ~2 s before it can act. */
+  spawnKlepto(now: number, id: number): void {
+    if (this.klepto) return; // defensive — the registry enforces one planet-wide
+    const span = SECTION_WIDTH - 2 * KLEPTO_EDGE_MARGIN;
+    const x = wrapX(this.x0 + KLEPTO_EDGE_MARGIN + Math.random() * span, this.width);
+    const k = new Klepto(id, x, this.groundY - KLEPTO_DROP_H, now);
+    k.setTarget(x, this.groundY - 10);
+    this.klepto = k;
+    this.events.push({
+      name: DomainEvent.KleptoLanded,
+      payload: { section: this.id, x, y: this.groundY },
+    });
+  }
+
+  /** Advance the klepto one tick. Order matters: beam-out countdown, then the
+   *  capture check (a capture on the deadline tick wins), then the master TTL,
+   *  then per-stage behavior. */
+  private advanceKlepto(now: number, dt: number): void {
+    const k = this.klepto;
+    if (!k) return;
+    // ① Captured/Escaped: rise on the beam, despawn at doneAt (snapshot `removed`
+    //    does the client-side cleanup; every chaser's action self-clears next tick).
+    if (k.stage === KleptoStage.Captured || k.stage === KleptoStage.Escaped) {
+      k.y -= BEAM_RISE_SPEED * dt;
+      if (now >= k.doneAt) this.klepto = null;
+      return;
+    }
+    // ② Two robots within capture range pin it — before the TTL, so a capture on
+    //    the deadline tick wins.
+    if (k.chaseable && this.tryCaptureKlepto(k, now)) return;
+    // ③ Master TTL: whatever else is happening, the incursion resolves (§4.7).
+    if (now >= k.lifeDeadline) {
+      this.kleptoEscape(k, now);
+      return;
+    }
+    // ④ Per-stage behavior.
+    if (k.stage === KleptoStage.Landing) {
+      if (k.step(dt, this.width, KLEPTO_FALL_SPEED)) {
+        // Touched down: beeline for the nearest stealable piece — or amble back to
+        // the beam spot for an empty-handed cameo (still catchable, still funny).
+        const target = this.nearestStealable(k.x, k.y);
+        k.targetPieceId = target ? target.id : null;
+        k.setTarget(target ? target.x : k.beamSpotX, this.kleptoSurfaceY());
+        k.stage = KleptoStage.Skittering;
+      }
+    } else if (k.stage === KleptoStage.Skittering) {
+      // Brazen approach: robots are ignored (no dodge outside Fleeing — otherwise a
+      // busy worksite would jitter it forever and the episode dies unseen).
+      const piece = k.targetPieceId !== null ? this.pieces.get(k.targetPieceId) : undefined;
+      if (k.targetPieceId !== null && !this.stealable(piece)) {
+        // Target vanished under it (reset/completed) → re-pick, or head home.
+        const next = this.nearestStealable(k.x, k.y);
+        k.targetPieceId = next ? next.id : null;
+        k.setTarget(next ? next.x : k.beamSpotX, this.kleptoSurfaceY());
+      }
+      if (k.step(dt, this.width, KLEPTO_SKITTER_SPEED)) {
+        if (k.targetPieceId !== null) {
+          k.stage = KleptoStage.Prying; // the interruptible head start
+          k.pryDoneAt = now + PRY_DURATION_MS;
+        } else {
+          this.kleptoEscape(k, now); // empty-handed cameo over
+        }
+      }
+    } else if (k.stage === KleptoStage.Prying) {
+      if (now >= k.pryDoneAt) {
+        // Re-check the guard AT the mutation moment (the contract may have reset or
+        // completed under it mid-pry).
+        const piece = k.targetPieceId !== null ? this.pieces.get(k.targetPieceId) : undefined;
+        if (piece && this.stealable(piece)) {
+          // The theft: the piece pops back to a ghost and the klepto carries it off.
+          // This is the codebase's only decrement of `placed` outside a reset.
+          piece.reset();
+          this.placed -= 1;
+          k.carriedPieceId = piece.id;
+          k.minEscapeAt = now + KLEPTO_MIN_FLEE_MS; // guaranteed chase window
+          this.events.push({
+            name: DomainEvent.KleptoStole,
+            payload: { pieceId: piece.id, x: piece.x, y: piece.y },
+          });
+          this.kleptoTaunt(k, now, ['😝'], 1); // the theft taunt reliably lands
+        } else {
+          this.kleptoTaunt(k, now, ['🤷'], 1); // foiled by circumstance — shrug, leave
+        }
+        k.targetPieceId = null;
+        k.stage = KleptoStage.Fleeing;
+        k.nextDashAt = now;
+      }
+    } else if (k.stage === KleptoStage.Fleeing) {
+      this.fleeKlepto(k, now, dt);
+    }
+    // Bot posse: keep up to KLEPTO_BOT_CHASERS NPC builders on the chase so a lone
+    // player always has a pincer partner — bounded, so the worksite never dissolves.
+    if (k.chaseable && now >= k.nextRecruitAt) {
+      k.nextRecruitAt = now + KLEPTO_RECRUIT_MS;
+      this.recruitChasers(k);
+    }
+  }
+
+  /** The Fleeing dash–pause–taunt loop, with the panic dodge that makes cornering
+   *  emergent: PANIC_RANGE (90) > CAPTURE_RANGE (36), so one robot always triggers
+   *  the dash-away before contact — but two closing from different bearings mean
+   *  the dash away from one lands in the arms of the other. */
+  private fleeKlepto(k: Klepto, now: number, dt: number): void {
+    // Escape: back at the beam spot after the guaranteed chase window (or anywhere
+    // once the master TTL fired — handled above).
+    if (
+      Math.abs(wrapDeltaX(k.x, k.beamSpotX, this.width)) <= INTERACT_RANGE * 2 &&
+      now >= k.minEscapeAt
+    ) {
+      this.kleptoEscape(k, now);
+      return;
+    }
+    const threat = this.nearestCaptor(k.x, k.y);
+    if (threat && wrappedDistance(threat.x, threat.y, k.x, k.y, this.width) <= KLEPTO_PANIC_RANGE) {
+      // Panic dash directly away from the nearest chaser (Fleeing only). Re-fires
+      // every tick while pursued, so a lone chaser can never close the gap.
+      const d = wrapDeltaX(threat.x, k.x, this.width); // vector from threat to me
+      const sign = d !== 0 ? Math.sign(d) : Math.random() < 0.5 ? -1 : 1;
+      const dist = KLEPTO_DASH_MIN + Math.random() * (KLEPTO_DASH_MAX - KLEPTO_DASH_MIN);
+      k.setTarget(this.kleptoClampX(k.x + sign * dist), this.kleptoSurfaceY());
+    } else if (k.atTarget && now >= k.nextDashAt) {
+      // Pause over → next dash: biased toward home (the beam spot), else a jink.
+      const dist = KLEPTO_DASH_MIN + Math.random() * (KLEPTO_DASH_MAX - KLEPTO_DASH_MIN);
+      let tx: number;
+      if (Math.random() < KLEPTO_HOME_BIAS) {
+        const home = wrapDeltaX(k.x, k.beamSpotX, this.width);
+        tx = k.x + Math.sign(home !== 0 ? home : 1) * Math.min(Math.abs(home) || dist, dist);
+      } else {
+        tx = k.x + (Math.random() < 0.5 ? -1 : 1) * dist;
+      }
+      k.setTarget(this.kleptoClampX(tx), this.kleptoSurfaceY());
+    }
+    const wasEnRoute = !k.atTarget;
+    const arrived = k.step(dt, this.width, KLEPTO_DASH_SPEED);
+    if (wasEnRoute && arrived) {
+      // Just landed a dash → taunt pause before the next one.
+      k.nextDashAt = now + KLEPTO_TAUNT_PAUSE_MIN_MS + Math.random() * KLEPTO_TAUNT_PAUSE_SPAN_MS;
+      this.kleptoTaunt(k, now, EMOTE_TAUNT);
+    }
+  }
+
+  /** Two non-parked, non-vaulted robots within CAPTURE_RANGE pin the klepto —
+   *  players AND NPCs; carrying, welding, or idle bystanders all count (a klepto
+   *  blundering into the crowd is the joke). Restores the stolen piece iff it's
+   *  still a ghost and the contract isn't mid-celebration (idempotent). */
+  private tryCaptureKlepto(k: Klepto, now: number): boolean {
+    const captors: Array<{ r: Robot; d: number }> = [];
+    for (const r of this.robots.values()) {
+      if (r.parked || r.insideZone !== null) continue;
+      const d = wrappedDistance(r.x, r.y, k.x, k.y, this.width);
+      if (d <= CAPTURE_RANGE) captors.push({ r, d });
+    }
+    if (captors.length < 2) return false;
+    if (k.carriedPieceId !== null) {
+      const piece = this.pieces.get(k.carriedPieceId);
+      // Skip the restore if the crew already rebuilt it mid-chase or the contract
+      // completed — still a capture, still a celebration (the mischief was stopped).
+      if (piece && piece.status === PieceStatus.Ghost && !this.completed) {
+        piece.status = PieceStatus.Placed;
+        this.recordPlacement(piece, now); // the real PiecePlaced path — can even
+        // legitimately complete the contract (capture + completion detonate both
+        // celebrations: the best possible outcome)
+      }
+      k.carriedPieceId = null; // loot marker off during the beam-out
+    }
+    captors.sort((a, b) => a.d - b.d);
+    for (const { r } of captors.slice(0, 2)) this.maybeEmote(r, EMOTE_CELEBRATE, now, 1);
+    this.events.push({ name: DomainEvent.KleptoCaptured, payload: { x: k.x, y: k.y } });
+    k.stage = KleptoStage.Captured;
+    k.doneAt = now + BEAM_OUT_MS;
+    return true;
+  }
+
+  private kleptoEscape(k: Klepto, now: number): void {
+    k.stage = KleptoStage.Escaped; // keeps its loot bit — it flies off with your piece
+    k.doneAt = now + BEAM_OUT_MS;
+    this.events.push({ name: DomainEvent.KleptoEscaped, payload: { x: k.x, y: k.y } });
+  }
+
+  /** Top the bot posse up to KLEPTO_BOT_CHASERS, nearest first. Eligibility is
+   *  deliberately picky: idle section-floor builders only — never couriers (the
+   *  ferry promise), never a migrating/carrying/engaged/vaulted bot, never one
+   *  mid-action (a mid-dig miner finishes its dig). Assignment is just the same
+   *  `chase` pending action a player tap writes; driveBuilder's existing
+   *  pendingAction→resolvePending branch runs it before the dawdle gate, so the
+   *  posse responds eagerly with zero crewAi changes. */
+  private recruitChasers(k: Klepto): void {
+    let chasing = 0;
+    for (const r of this.robots.values()) {
+      if (r.isNpc && r.pendingAction?.kind === 'chase' && r.pendingAction.targetId === k.id)
+        chasing += 1;
+    }
+    if (chasing >= KLEPTO_BOT_CHASERS) return;
+    const eligible: Array<{ r: Robot; d: number }> = [];
+    for (const r of this.robots.values()) {
+      if (
+        !r.isNpc ||
+        !r.isBuilder ||
+        r.isCourier ||
+        r.carrying ||
+        r.pendingAction !== null ||
+        r.engagedPieceId !== null ||
+        r.insideZone !== null ||
+        r.migratingTo !== null
+      )
+        continue;
+      eligible.push({ r, d: wrappedDistance(r.x, r.y, k.x, k.y, this.width) });
+    }
+    eligible.sort((a, b) => a.d - b.d);
+    for (const { r } of eligible.slice(0, KLEPTO_BOT_CHASERS - chasing)) {
+      r.setTarget(k.x, k.y);
+      r.pendingAction = { kind: 'chase', targetId: k.id };
+    }
+  }
+
+  /** A piece the klepto may steal: a plain section-floor Placed piece, and never
+   *  during the completion/celebration beat (the `placed` counter must stay true). */
+  private stealable(piece: Piece | undefined): piece is Piece {
+    return (
+      piece !== undefined &&
+      !this.completed &&
+      piece.status === PieceStatus.Placed &&
+      !piece.weld &&
+      piece.zoneId === null
+    );
+  }
+
+  private nearestStealable(x: number, y: number): Piece | null {
+    if (this.completed) return null;
+    return nearest(
+      this.pieces.values(),
+      x,
+      y,
+      this.width,
+      (p) => p.status === PieceStatus.Placed && !p.weld && p.zoneId === null,
+    );
+  }
+
+  /** Nearest robot that counts toward a capture (drives the panic dodge). */
+  private nearestCaptor(x: number, y: number): Robot | null {
+    return nearest(
+      this.robots.values(),
+      x,
+      y,
+      this.width,
+      (r) => !r.parked && r.insideZone === null,
+    );
+  }
+
+  /** The klepto's own emote path: same RobotEmote event the client already floats
+   *  (it resolves any rendered entity id), but with the shorter taunt cooldown. */
+  private kleptoTaunt(k: Klepto, now: number, pool: readonly string[], chance = 0.7): void {
+    if (now < k.nextEmoteAt || Math.random() > chance) return;
+    k.nextEmoteAt = now + EMOTE_TAUNT_COOLDOWN_MS;
+    this.events.push({
+      name: DomainEvent.RobotEmote,
+      payload: { robotId: k.id, e: pool[Math.floor(Math.random() * pool.length)]! },
+    });
+  }
+
+  /** Keep the whole episode inside this section (chunk isolation preserved). */
+  private kleptoClampX(x: number): number {
+    return clamp(x, this.x0 + KLEPTO_EDGE_MARGIN, this.x1 - KLEPTO_EDGE_MARGIN);
+  }
+
+  /** A random Y in the klepto's surface band (it scurries, it doesn't fly). */
+  private kleptoSurfaceY(): number {
+    return this.groundY - 4 - Math.random() * 36;
+  }
+
   /** A random Y in the band just above the surface — ambient wanderers mill along
    *  the ground rather than floating up into the empty sky. (Crew-AI surface.) */
   wanderY(): number {
@@ -717,6 +1066,9 @@ export class Chunk {
         status: zone.isFull ? 1 : 0,
       });
     }
+    // The klepto rides the same path (entity-neutral pays off again); its despawn
+    // is simply absence → the existing delta `removed[]` cleans up every client.
+    if (this.klepto) out.push(this.klepto.toSnapshot());
     return out;
   }
 

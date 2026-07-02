@@ -26,7 +26,33 @@ export enum EntityKind {
    *  full (the client reddens it), else 0. The zone's live count/cap rides
    *  S_SECTIONS like any other zone. */
   Gate = 6,
+  /** A klepto alien (§3 slapstick, Phase 3's first slice): lands, pries off a placed
+   *  piece, and flees — corner it with TWO robots to capture it (captured, never
+   *  killed; mischief, not malice). `status` low 3 bits = KleptoStage; bit 3
+   *  (KLEPTO_LOOT_BIT) is set while it carries a stolen piece. */
+  Klepto = 7,
 }
+
+/** Klepto lifecycle stage, the low 3 bits of its `status`. Captured/Escaped are
+ *  brief beam-out beats; the entity then leaves the snapshot (delta `removed`) —
+ *  no terminal state to get stuck in. */
+export enum KleptoStage {
+  /** Descending from the sky — telegraphed, not yet chaseable. */
+  Landing = 0,
+  /** Beelining for its target piece (or leaving empty-handed). */
+  Skittering = 1,
+  /** At the piece, prying — the interruptible head start. */
+  Prying = 2,
+  /** Dash-and-taunt with (or without) the loot. */
+  Fleeing = 3,
+  /** Pinned! Beaming out. */
+  Captured = 4,
+  /** Got away — beaming out. */
+  Escaped = 5,
+}
+/** Klepto `status` bit 3 — set while it carries a stolen piece (the client shows
+ *  the amber loot marker). */
+export const KLEPTO_LOOT_BIT = 8;
 
 /**
  * Robot status is a small bitfield, not an enum of distinct states, so "carrying"
