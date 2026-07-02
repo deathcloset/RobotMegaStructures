@@ -13,7 +13,6 @@ import {
   PieceStatus,
   SECTION_WIDTH,
   type SectionInfo,
-  sectionCenterX,
   WELD_DURATION_MS,
   WELD_RESERVATION_TTL_MS,
   WORLD_HEIGHT,
@@ -21,6 +20,7 @@ import {
   wrappedDistance,
   wrapX,
 } from '@rms/shared';
+import { driveBuilder, driveCourier } from './crewAi';
 import type { Deposit } from './Deposit';
 import { Flag } from './Flag';
 import type { NestedZone } from './NestedZone';
@@ -32,16 +32,9 @@ import type { Robot } from './Robot';
  *  kept disjoint from the seeded-entity ranges in `blueprint.ts`. */
 const FLAG_ID_BASE = 4_000_000;
 
-/** How often a roaming builder relocates to another section (ms): a base interval
- *  plus a random span, so crews migrate as a steady trickle rather than in lockstep
- *  — keeping cross-section traffic (and thus checkpoint queues) alive. */
-const RELOCATE_MIN_MS = 10_000;
-const RELOCATE_SPAN_MS = 15_000;
-/** A "hot" section rotates this often (ms); relocating crews are biased toward it,
- *  so a focus area fills and its checkpoints visibly back up before it moves on.
- *  Derived from the clock so every section agrees without shared state. */
-const HOT_PERIOD_MS = 30_000;
-const HOT_BIAS = 0.4; // fraction of relocations that head for the hot section
+/** Ambient wanderers mill in a band this tall just above the surface, rather than
+ *  floating up into the empty sky. */
+const WANDER_BAND_H = 220;
 
 /** A nested vault's interior contract loops on its own this long after it's finished
  *  (a brief "done" beat), faster than the section contract — so the chamber stays a
@@ -144,18 +137,10 @@ export class Chunk {
     this.flags.delete(FLAG_ID_BASE + robotId);
   }
 
-  /** Nearest work-flag to a point (the crew rallies to whichever flag is closest). */
-  private nearestFlag(x: number, y: number): Flag | null {
-    let best: Flag | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const flag of this.flags.values()) {
-      const d = wrappedDistance(x, y, flag.x, flag.y, this.width);
-      if (d < bestDist) {
-        bestDist = d;
-        best = flag;
-      }
-    }
-    return best;
+  /** Nearest work-flag to a point (the crew rallies to whichever flag is closest).
+   *  (Crew-AI surface.) */
+  nearestFlag(x: number, y: number): Flag | null {
+    return nearest(this.flags.values(), x, y, this.width);
   }
 
   /** The nested zone with this id, if any. */
@@ -342,8 +327,8 @@ export class Chunk {
         // Builders run the build loop (zone-scoped: a vault crew builds the chamber's
         // interior contract, a section crew builds the floor); couriers ferry material
         // to the flag. Non-builders inside a chamber just hold; outside, they wander.
-        if (robot.isBuilder) this.driveBuilder(robot, now);
-        else if (robot.isCourier) this.driveCourier(robot, now, flagSection);
+        if (robot.isBuilder) driveBuilder(this, robot, now);
+        else if (robot.isCourier) driveCourier(this, robot, now, flagSection);
         else if (robot.insideZone !== null) {
           // A non-builder resident of a chamber: hold inside, don't wander out.
         }
@@ -361,169 +346,10 @@ export class Chunk {
     this.advanceContract(now);
   }
 
-  /** Autonomous build loop for an AI bot, including weld cooperation: weld a piece
-   *  awaiting a partner if there's one (no material needed), else haul from the
-   *  nearest depot to the nearest ghost. A short dawdle keeps bots visibly less
-   *  efficient than players. The seed of the commandable crew/swarm. */
-  private driveBuilder(robot: Robot, now: number): void {
-    // Roaming work crews: a migrating builder heads for another section and only
-    // works again once it arrives — queuing at full checkpoints along the way. This
-    // cross-section traffic is what makes the OSHA caps actually fill and queue.
-    if (robot.migratingTo !== null) {
-      if (this.id === robot.migratingTo)
-        robot.migratingTo = null; // arrived → work here
-      else if (robot.pendingAction === null) return; // still travelling / queuing
-    }
-    if (robot.pendingAction !== null) {
-      this.resolvePending(robot, now);
-      // Finished (and not now holding/welding) → dawdle before the next action.
-      if (robot.pendingAction === null && robot.engagedPieceId === null) {
-        robot.nextActionAt = now + 400 + Math.random() * 1400;
-      }
-      return;
-    }
-    if (now < robot.nextActionAt) return;
-
-    // Periodically pull up stakes and go work another section (first time staggered).
-    if (robot.canMigrate) {
-      if (robot.relocateAt === 0) {
-        robot.relocateAt = now + Math.random() * RELOCATE_SPAN_MS;
-      } else if (!robot.carrying && now >= robot.relocateAt) {
-        robot.relocateAt = now + RELOCATE_MIN_MS + Math.random() * RELOCATE_SPAN_MS;
-        // Bias toward the rotating "hot" section so crews converge and queue there;
-        // otherwise pick any other section. The hot section is clock-derived, so all
-        // sections agree without any shared state.
-        const hot = Math.floor(now / HOT_PERIOD_MS) % CHUNK_COLS;
-        robot.migratingTo =
-          hot !== this.id && Math.random() < HOT_BIAS ? hot : this.randomOtherSection();
-        robot.setTarget(
-          sectionCenterX(robot.migratingTo) + (Math.random() * 2 - 1) * 180,
-          this.wanderY(),
-        );
-        return;
-      }
-    }
-
-    // A vault crew (inside a chamber) works ONLY that chamber's interior contract —
-    // haul its depot to its ghosts. Welds, work-flags, and prospecting are all
-    // section-floor concerns, so they're skipped for a vault builder.
-    const zone = robot.insideZone;
-    if (zone === null) {
-      const weldNeedingPartner = this.nearestReservedWeld(robot.x, robot.y, robot.id);
-      if (weldNeedingPartner) {
-        robot.setTarget(weldNeedingPartner.x, weldNeedingPartner.y);
-        robot.pendingAction = { kind: 'weld', targetId: weldNeedingPartner.id };
-        return;
-      }
-    }
-    if (!robot.carrying) {
-      if (zone !== null) {
-        // Inside a vault: grab from the chamber's own depot.
-        const depot = this.nearestResource(robot.x, robot.y, zone);
-        if (depot) {
-          robot.setTarget(depot.x, depot.y);
-          robot.pendingAction = { kind: 'pickup', targetId: depot.id };
-        } else {
-          robot.nextActionAt = now + 1000;
-        }
-        return;
-      }
-      // A work-flag rallies the whole crew: mine the nearest vein to the flag,
-      // hauling back to the structure — the commandable-crew lever (§ Phase 2).
-      const flag = this.nearestFlag(robot.x, robot.y);
-      if (flag) {
-        const flagged = this.nearestDeposit(flag.x, flag.y);
-        if (flagged) {
-          robot.setTarget(flagged.x, flagged.y);
-          robot.pendingAction = { kind: 'mine', targetId: flagged.id };
-          return;
-        }
-      }
-      // No flag (or no vein near it): prospectors mine, other builders use the
-      // convenient depots — each falls back to the other so none is stuck empty.
-      const vein = this.nearestDeposit(robot.x, robot.y);
-      const depot = this.nearestResource(robot.x, robot.y, null);
-      const mine = robot.prefersMining ? vein : null;
-      if (mine) {
-        robot.setTarget(mine.x, mine.y);
-        robot.pendingAction = { kind: 'mine', targetId: mine.id };
-      } else if (depot) {
-        robot.setTarget(depot.x, depot.y);
-        robot.pendingAction = { kind: 'pickup', targetId: depot.id };
-      } else if (vein) {
-        robot.setTarget(vein.x, vein.y);
-        robot.pendingAction = { kind: 'mine', targetId: vein.id };
-      }
-    } else {
-      const ghost = this.nearestGhost(robot.x, robot.y, zone);
-      if (ghost) {
-        robot.setTarget(ghost.x, ghost.y);
-        robot.pendingAction = { kind: 'deliver', targetId: ghost.id };
-      } else {
-        robot.nextActionAt = now + 1000; // nothing to build (resetting) — wait
-      }
-    }
-  }
-
-  /**
-   * Delivery-swarm courier (set-and-forget logistics, § Phase 2). When a work-flag is
-   * planted anywhere on the planet, couriers FERRY material to that section and build
-   * there: grab a load from wherever they are, carry it across the checkpoints to the
-   * flag, deliver, then head back out to source another. With no flag they just help
-   * build their current section. A courier's signature — visible on the wire — is a load
-   * crossing section boundaries toward your flag (vs a builder, who migrates empty + mines).
-   */
-  private driveCourier(robot: Robot, now: number, flagSection: number | null): void {
-    if (robot.pendingAction !== null) {
-      this.resolvePending(robot, now);
-      if (robot.pendingAction === null && robot.engagedPieceId === null) {
-        robot.nextActionAt = now + 300 + Math.random() * 900; // a brief beat between runs
-      }
-      return;
-    }
-    if (now < robot.nextActionAt) return;
-
-    if (!robot.carrying) {
-      // Empty AT the delivery target → head back out to source another load elsewhere.
-      if (flagSection !== null && this.id === flagSection) {
-        if (robot.migratingTo === null) {
-          robot.migratingTo = this.randomOtherSection();
-          robot.setTarget(
-            sectionCenterX(robot.migratingTo) + (Math.random() * 2 - 1) * 180,
-            this.wanderY(),
-          );
-        }
-        return;
-      }
-      // Otherwise grab a load from the nearest depot right here, to ferry.
-      const depot = this.nearestResource(robot.x, robot.y, null);
-      if (depot) {
-        robot.setTarget(depot.x, depot.y);
-        robot.pendingAction = { kind: 'pickup', targetId: depot.id };
-      } else {
-        robot.nextActionAt = now + 1000;
-      }
-      return;
-    }
-    // Carrying → deliver at the flagged section (ferry there), or build locally if no flag.
-    const dest = flagSection ?? this.id;
-    if (this.id === dest) {
-      robot.migratingTo = null;
-      const ghost = this.nearestGhost(robot.x, robot.y, null);
-      if (ghost) {
-        robot.setTarget(ghost.x, ghost.y);
-        robot.pendingAction = { kind: 'deliver', targetId: ghost.id };
-      } else {
-        robot.nextActionAt = now + 1000; // arrived but nothing to build — hold the load a beat
-      }
-    } else if (robot.migratingTo !== dest) {
-      robot.migratingTo = dest; // set the heading once; settle carries it across checkpoints
-      robot.setTarget(sectionCenterX(dest) + (Math.random() * 2 - 1) * 180, this.wanderY());
-    }
-  }
-
-  /** Execute a robot's queued action once it's within interaction range. */
-  private resolvePending(robot: Robot, now: number): void {
+  /** Execute a robot's queued action once it's within interaction range.
+   *  ── Internal crew-AI surface: this and the members marked below are public
+   *  only for `crewAi.ts` (the builder/courier brains); nothing else calls them. */
+  resolvePending(robot: Robot, now: number): void {
     const action = robot.pendingAction;
     if (action === null) return;
 
@@ -765,14 +591,14 @@ export class Chunk {
   }
 
   /** A random Y in the band just above the surface — ambient wanderers mill along
-   *  the ground rather than floating up into the empty sky. */
-  private wanderY(): number {
-    return this.groundY - Math.random() * 220;
+   *  the ground rather than floating up into the empty sky. (Crew-AI surface.) */
+  wanderY(): number {
+    return this.groundY - Math.random() * WANDER_BAND_H;
   }
 
   /** A random section other than this one (uniform) — a relocating builder's
-   *  destination. */
-  private randomOtherSection(): number {
+   *  destination. (Crew-AI surface.) */
+  randomOtherSection(): number {
     if (CHUNK_COLS <= 1) return this.id;
     let d = Math.floor(Math.random() * (CHUNK_COLS - 1));
     if (d >= this.id) d += 1; // skip self → uniform over the other sections
@@ -781,68 +607,45 @@ export class Chunk {
 
   /** Nearest depot in the robot's own zone (`zoneId` null = the section; a vault id =
    *  that chamber). A robot only sources from its own zone, so vault crews use the
-   *  vault depot and section crews ignore it. */
-  private nearestResource(x: number, y: number, zoneId: number | null): Resource | null {
-    let best: Resource | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const res of this.resources.values()) {
-      if (res.zoneId !== zoneId) continue;
-      const d = wrappedDistance(x, y, res.x, res.y, this.width);
-      if (d < bestDist) {
-        bestDist = d;
-        best = res;
-      }
-    }
-    return best;
+   *  vault depot and section crews ignore it. (Crew-AI surface.) */
+  nearestResource(x: number, y: number, zoneId: number | null): Resource | null {
+    return nearest(this.resources.values(), x, y, this.width, (res) => res.zoneId === zoneId);
   }
 
-  /** Nearest ore vein that still has material (for the mining builders). */
-  private nearestDeposit(x: number, y: number): Deposit | null {
-    let best: Deposit | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const dep of this.deposits.values()) {
-      if (dep.amount < 1) continue;
-      const d = wrappedDistance(x, y, dep.x, dep.y, this.width);
-      if (d < bestDist) {
-        bestDist = d;
-        best = dep;
-      }
-    }
-    return best;
+  /** Nearest ore vein that still has material (for the mining builders).
+   *  (Crew-AI surface.) */
+  nearestDeposit(x: number, y: number): Deposit | null {
+    return nearest(this.deposits.values(), x, y, this.width, (dep) => dep.amount >= 1);
   }
 
   /** Nearest unbuilt ghost in the robot's own zone — so vault crews build the vault's
-   *  interior contract and section crews build the section's (and ignore each other's). */
-  private nearestGhost(x: number, y: number, zoneId: number | null): Piece | null {
-    let best: Piece | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const piece of this.pieces.values()) {
-      if (piece.status !== PieceStatus.Ghost) continue;
-      if (piece.zoneId !== zoneId) continue;
-      const d = wrappedDistance(x, y, piece.x, piece.y, this.width);
-      if (d < bestDist) {
-        bestDist = d;
-        best = piece;
-      }
-    }
-    return best;
+   *  interior contract and section crews build the section's (and ignore each
+   *  other's). (Crew-AI surface.) */
+  nearestGhost(x: number, y: number, zoneId: number | null): Piece | null {
+    return nearest(
+      this.pieces.values(),
+      x,
+      y,
+      this.width,
+      (piece) => piece.status === PieceStatus.Ghost && piece.zoneId === zoneId,
+    );
   }
 
   /** Nearest weld piece that has a holder but no welder yet (a partner is needed),
-   *  excluding one held by `excludeRobotId` (you can't weld your own hold). */
-  private nearestReservedWeld(x: number, y: number, excludeRobotId: number): Piece | null {
-    let best: Piece | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const piece of this.pieces.values()) {
-      if (!piece.weld || piece.status !== PieceStatus.Reserved) continue;
-      if (piece.welderId !== null || piece.holderId === excludeRobotId) continue;
-      const d = wrappedDistance(x, y, piece.x, piece.y, this.width);
-      if (d < bestDist) {
-        bestDist = d;
-        best = piece;
-      }
-    }
-    return best;
+   *  excluding one held by `excludeRobotId` (you can't weld your own hold).
+   *  (Crew-AI surface.) */
+  nearestReservedWeld(x: number, y: number, excludeRobotId: number): Piece | null {
+    return nearest(
+      this.pieces.values(),
+      x,
+      y,
+      this.width,
+      (piece) =>
+        piece.weld &&
+        piece.status === PieceStatus.Reserved &&
+        piece.welderId === null &&
+        piece.holderId !== excludeRobotId,
+    );
   }
 
   /** Read-only projection of all entities (Phase 0 AOI = whole chunk). */
@@ -872,6 +675,28 @@ export class Chunk {
     if (this.events.length === 0) return [];
     return this.events.splice(0, this.events.length);
   }
+}
+
+/** Generic nearest-entity scan (wrap-aware): iterate → accept-filter → track best.
+ *  The one shape behind every nearest* query above. */
+function nearest<T extends { x: number; y: number }>(
+  items: Iterable<T>,
+  x: number,
+  y: number,
+  width: number,
+  accept?: (item: T) => boolean,
+): T | null {
+  let best: T | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    if (accept && !accept(item)) continue;
+    const d = wrappedDistance(x, y, item.x, item.y, width);
+    if (d < bestDist) {
+      bestDist = d;
+      best = item;
+    }
+  }
+  return best;
 }
 
 function within(robot: Robot, e: { x: number; y: number }, width: number): boolean {

@@ -18,6 +18,13 @@ import { Robot } from '../sim/Robot';
 import type { WorldRepo } from '../state/repository';
 import { Connection } from './Connection';
 
+/** New players spawn by their section's worksite, scattered this far to either
+ *  side and in a small band above the surface, so a crowd of joiners doesn't
+ *  stack on one pixel. */
+const SPAWN_JITTER_X = 80;
+const SPAWN_Y_MIN = 24;
+const SPAWN_Y_SPAN = 40;
+
 /**
  * Owns WebSocket connections: accept, hello/version-check, intent routing, and
  * lifecycle. Connection resilience (§4.7) lives here: each player robot carries a
@@ -124,8 +131,8 @@ export class WsGateway {
     // Spawn into a section with room under the OSHA cap, by its worksite, so new
     // players land looking at a structure rising in front of them.
     const chunk = this.chunks.spawnSection();
-    const spawnX = chunk.centerX + (Math.random() * 2 - 1) * 80;
-    const spawnY = chunk.groundY - 24 - Math.random() * 40;
+    const spawnX = chunk.centerX + (Math.random() * 2 - 1) * SPAWN_JITTER_X;
+    const spawnY = chunk.groundY - SPAWN_Y_MIN - Math.random() * SPAWN_Y_SPAN;
     const robot = new Robot(
       robotId,
       this.repo.nextStableId('robot'),

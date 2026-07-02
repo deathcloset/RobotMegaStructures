@@ -150,8 +150,9 @@ through the one `applyIntent` chokepoint — copy that shape.
   but drain in waves; the `queued` gauge rises and falls rather than climbing to a frozen
   plateau). Caps **vary per zone** (`CAP_MULT` + `MIN_SECTION_CAP` in `index.ts`, anchored
   to `SECTION_CAPACITY`) and each section's crew scales to its cap (`pop = capacity − 3`).
-  Other knobs: `Chunk.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued`
-  gauge in the metrics log.
+  Other knobs: `crewAi.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`, dawdle/beat
+  timings — the builder/courier brains live there now, called from `Chunk.step`);
+  watch the `queued` gauge in the metrics log.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids

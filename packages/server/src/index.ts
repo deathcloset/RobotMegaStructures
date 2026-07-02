@@ -29,6 +29,13 @@ const repo = new InMemoryWorldRepo();
 // so the planet has a mix of crowded and quiet zones.
 const CAP_MULT = [1, 0.45, 1.3, 0.65, 0.35, 1.15];
 const MIN_SECTION_CAP = 3;
+/** AI bots work, but not as well as players — their speed relative to a player's. */
+const AI_SPEED_FACTOR = 0.72;
+/** A section's seeded crew stays this far under its OSHA cap, so there's always
+ *  room for visitors + roaming crews (tight zones sparse, roomy ones busy). */
+const CREW_CAP_MARGIN = 3;
+/** Seeded NPCs scatter vertically in a band this tall above the surface. */
+const NPC_SPAWN_BAND_H = 200;
 const sectionCaps = Array.from({ length: CHUNK_COLS }, (_, i) =>
   Math.max(MIN_SECTION_CAP, Math.round(config.sectionCapacity * CAP_MULT[i % CAP_MULT.length]!)),
 );
@@ -111,12 +118,12 @@ function seedRobots(chunk: Chunk): void {
   const span = chunk.x1 - chunk.x0;
   // Population scales with this section's cap, kept a margin below it so there's
   // always room for visitors + roaming crews: tight zones are sparse, roomy ones busy.
-  const pop = Math.max(2, Math.min(config.seedRobots, chunk.capacity - 3));
+  const pop = Math.max(2, Math.min(config.seedRobots, chunk.capacity - CREW_CAP_MARGIN));
   const builders = Math.min(config.seedBuilders, pop);
   const couriers = Math.min(config.seedCouriers, pop - builders);
   for (let i = 0; i < pop; i++) {
     nextNpcId += 1;
-    const y = chunk.groundY - 20 - Math.random() * 200;
+    const y = chunk.groundY - 20 - Math.random() * NPC_SPAWN_BAND_H;
     const robot = new Robot(
       -nextNpcId,
       repo.nextStableId('npc'),
@@ -126,14 +133,17 @@ function seedRobots(chunk: Chunk): void {
     );
     if (i < builders) {
       robot.isBuilder = true;
-      robot.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
+      robot.speed = ROBOT_SPEED * AI_SPEED_FACTOR;
       robot.prefersMining = i < config.seedMiners; // some prospect the veins
       robot.canMigrate = true; // roaming work crews — travel between sections
     } else if (i < builders + couriers) {
       robot.isCourier = true; // delivery swarm — ferries material to the work-flag
-      robot.speed = ROBOT_SPEED * 0.72;
+      robot.speed = ROBOT_SPEED * AI_SPEED_FACTOR;
     } else {
-      robot.setTarget(chunk.x0 + Math.random() * span, chunk.groundY - Math.random() * 200);
+      robot.setTarget(
+        chunk.x0 + Math.random() * span,
+        chunk.groundY - Math.random() * NPC_SPAWN_BAND_H,
+      );
     }
     chunk.addOccupant(robot);
   }
@@ -168,7 +178,7 @@ function seedNestedZone(parent: Chunk, cap: number): void {
     );
     r.insideZone = zone.id; // a resident worker living in the chamber…
     r.isBuilder = true; // …who builds the vault's interior contract
-    r.speed = ROBOT_SPEED * 0.72; // AI bots work, but not as well as players
+    r.speed = ROBOT_SPEED * AI_SPEED_FACTOR;
     parent.addOccupant(r);
     zone.occupants.add(r.id);
   }
