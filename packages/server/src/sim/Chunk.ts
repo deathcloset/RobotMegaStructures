@@ -631,13 +631,13 @@ export class Chunk {
       if (!piece.weld) continue;
       if (piece.status === PieceStatus.Reserved) {
         const holder = this.engaged(piece.holderId, piece.id);
-        if (!holder || !holder.carrying || now > piece.reserveDeadline) {
+        if (!holder?.carrying || now > piece.reserveDeadline) {
           this.releaseWeld(piece);
         }
       } else if (piece.status === PieceStatus.InProgress) {
         const holder = this.engaged(piece.holderId, piece.id);
         const welder = this.engaged(piece.welderId, piece.id);
-        if (!holder || !holder.carrying) {
+        if (!holder?.carrying) {
           this.releaseWeld(piece); // the beam's gone — drop it back to a ghost
         } else if (!welder) {
           // welder wandered off / dropped — back to awaiting a partner
