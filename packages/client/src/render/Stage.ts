@@ -1,5 +1,7 @@
 import {
   EntityKind,
+  KLEPTO_LOOT_BIT,
+  KleptoStage,
   NESTED_ZONE_HALF_H,
   NESTED_ZONE_HALF_W,
   PieceStatus,
@@ -46,6 +48,7 @@ export class Stage {
   private depositTex!: Texture;
   private flagTex!: Texture;
   private gateTex!: Texture;
+  private kleptoTex!: Texture;
   private readonly sprites = new Map<number, Sprite>();
   /** Small "held material" marker shown above a carrying robot. */
   private readonly cargo = new Map<number, Sprite>();
@@ -88,6 +91,22 @@ export class Stage {
     this.depositTex = this.makeSquareTexture(26, 4); // rendered as a faceted rock
     this.flagTex = this.makeFlagTexture();
     this.gateTex = this.makeGateTexture();
+    this.kleptoTex = this.makeKleptoTexture();
+  }
+
+  /** The klepto (§3 slapstick): a dome on stubby legs with one big eye — a
+   *  silhouette nothing else on the planet has. White fill, tinted at style time
+   *  (mischief violet on the ground, teleport cyan while beaming). */
+  private makeKleptoTexture(): Texture {
+    const g = new Graphics();
+    g.ellipse(11, 8, 11, 8).fill(0xffffff); // the dome
+    g.rect(3, 13, 3, 7).fill(0xffffff); // three stubby legs
+    g.rect(9.5, 14, 3, 8).fill(0xffffff);
+    g.rect(16, 13, 3, 7).fill(0xffffff);
+    g.circle(11, 7, 3.4).fill(0x0a0e14); // one big round eye
+    const tex = this.app.renderer.generateTexture(g);
+    g.destroy();
+    return tex;
   }
 
   /** A gate: a doorway slab standing on the surface (anchored at its base), tinted
@@ -254,11 +273,17 @@ export class Stage {
   /** A little burst of celebration emoji scattered around a point (contract done,
    *  vault finished — the big moments). */
   celebrate(x: number, y: number): void {
+    this.celebrateWith(x, y, CELEBRATE_EMOJI);
+  }
+
+  /** The same burst with a caller-chosen emoji pool (😱❗ at a theft, 🎉 at a
+   *  capture — the pool sets the mood, the mechanism is identical). */
+  celebrateWith(x: number, y: number, pool: readonly string[]): void {
     for (let i = 0; i < CELEBRATE_COUNT; i++) {
       this.floatEmote(
         x + (Math.random() * 2 - 1) * 60,
         y + (Math.random() * 2 - 1) * 30,
-        CELEBRATE_EMOJI[i % CELEBRATE_EMOJI.length]!,
+        pool[i % pool.length]!,
       );
     }
   }
@@ -362,6 +387,7 @@ export class Stage {
     if (kind === EntityKind.Deposit) return this.depositTex;
     if (kind === EntityKind.Flag) return this.flagTex;
     if (kind === EntityKind.Gate) return this.gateTex;
+    if (kind === EntityKind.Klepto) return this.kleptoTex;
     return this.robotTex;
   }
 
@@ -426,6 +452,42 @@ export class Stage {
         sprite.tint = full ? 0xff6b6b : 0x6bd6ff;
         sprite.alpha = 0.95;
         sprite.scale.set(1);
+        break;
+      }
+      case EntityKind.Klepto: {
+        // The klepto (§3 slapstick): low 3 bits of status = stage, bit 3 = loot.
+        const stage = e.status & 7;
+        const loot = (e.status & KLEPTO_LOOT_BIT) !== 0;
+        sprite.scale.set(0.9);
+        if (stage >= KleptoStage.Captured) {
+          // Beaming out (captured or escaped): teleport-tech cyan + a flicker.
+          sprite.tint = 0x6bd6ff;
+          sprite.alpha = 0.4 + 0.3 * Math.sin(performance.now() / 60);
+          sprite.rotation = 0;
+        } else {
+          sprite.tint = 0xb06be0; // mischief violet — nothing else wears it
+          sprite.alpha = 1;
+          // A waddle while it scurries; a faster wobble while it pries.
+          sprite.rotation =
+            stage === KleptoStage.Prying
+              ? Math.sin(performance.now() / 45) * 0.18
+              : Math.sin(performance.now() / 90) * 0.12;
+        }
+        // While it carries YOUR piece: the same cargo marker robots wear, tinted
+        // placed-piece amber — instantly legible as "it has our piece!".
+        if (loot) {
+          let marker = this.cargo.get(e.id);
+          if (!marker) {
+            marker = new Sprite(this.cargoTex);
+            marker.anchor.set(0.5);
+            this.world.addChild(marker);
+            this.cargo.set(e.id, marker);
+          }
+          marker.tint = 0xe0a24e;
+          marker.position.set(rx, e.y - 16);
+        } else {
+          this.dropCargo(e.id);
+        }
         break;
       }
       default: {

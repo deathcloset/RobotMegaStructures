@@ -18,9 +18,64 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 ---
 
-## Unreleased — Phase 2, continued 🚧
+## Unreleased 🚧
 
 Building on the v0.3.0 architecture (most recent first).
+
+### Phase 3 opener — the klepto alien incursion 👾
+
+The game's first **slapstick stakes** system (§3: mischief, not malice) — the first
+thing that ever happens *TO* the players. At most one klepto alive planet-wide,
+every 2–4 minutes (`KLEPTO_MIN_MS`/`KLEPTO_SPAN_MS`):
+
+- **The episode** (~30–45 s, self-contained): a global `👾❗ ZONE n` klaxon → a
+  violet critter **drops out of the sky** (~2 s telegraph) → **skitters** (faster
+  than any robot) straight at the nearest placed piece, brazenly ignoring everyone
+  → **pries** for a fat 2.6 s → *pop*, the piece flips back to a ghost and the
+  klepto flees with a visible amber loot marker, taunting 😝🤪🙈 in dash-and-pause
+  zig-zags biased back toward its landing spot.
+- **The pincer is emergent geometry**: its panic range (90) is strictly wider than
+  the capture range (36), so ONE chaser always triggers the dodge before contact —
+  never catchable alone — while TWO robots closing from different bearings corner
+  it: the dash away from one lands in the arms of the other. The two-robot weld
+  cooperation, replayed as slapstick. Tap it to chase; **the 2 nearest idle NPC
+  builders join the posse automatically** (bounded — the worksite never dissolves;
+  couriers/vaulted/migrating/mid-action bots are never drafted), so a lone player
+  always has a pincer partner. Two robots reaching it **mid-pry deny the theft
+  entirely**.
+- **Captured, never killed**: both captors pop 🎉, the stolen piece is restored
+  through the real placement path (a capture can legitimately complete the
+  contract), banner `🤝👾🎉`, and the klepto freezes cyan and beams away. If nobody
+  catches it (guaranteed ≥ 12 s of chase after a theft, hard episode cap 45 s), it
+  beams out with the part — `👾💨` — and the crew simply rebuilds through the
+  untouched contract loop. Losing costs ~20 s of crew work; nothing can deadlock
+  (no robot references held across ticks, no reservations, one master TTL — §4.7).
+- **Not a robot, on purpose**: no OSHA cap slot, invisible to `settle()`, clamped
+  inside its section — chunk isolation and the multi-server seam untouched. Weld
+  pieces and vault interiors are never stolen. Spawns prefer a section with a live
+  player and something stealable (the show lands where the audience is).
+- **Protocol → 12**: the `Klepto` entity kind (stage + loot bit in `status`) + four
+  incursion events. `KleptoStole` deliberately carries `pieceId` — the seam for
+  future victim attribution ("a klepto stole 🦾🌟-7's girder") when identity ships.
+  Emoji-only, zero new English (the `ZONE n` fragment reuses the shipped label
+  vocabulary). Egress: one 5-int entity at 4 Hz to viewers of that section while
+  alive (< 1 B/s amortized), ~16 events/episode. `klepto_captured`/`klepto_escaped`
+  counters in the metrics log.
+- **Deliberately deferred** (named, §2.5): tourist aliens + trading a captured
+  klepto, the security-kit certification gate, cross-section chases, multiple
+  simultaneous kleptos, vault/weld/carried-load theft, victim attribution, audio.
+- **Proven**: unit (132 tests, +24) — the theft flips the piece + decrements +
+  sets the loot bit; steal guards (weld/vault/completed); retarget under a reset;
+  the brazen approach; two-robot capture restores + celebrates + beams out; a lone
+  glued chaser never captures (panic dodge) and the klepto ultimately escapes;
+  mid-pry capture denies the theft; parked/vaulted robots never pin; an
+  uncontested escape self-heals (the crew rebuilds); no double-restore after a
+  mid-chase rebuild; section clamping; tap-to-chase lifecycle (live re-target,
+  move-cancel, despawn self-clear); a disconnecting chaser deadlocks nothing;
+  bounded picky recruitment with the worksite still building; vault-player tap
+  steps out; spawner one-alive/boot-delay/quiet-gap/audience-preference/no-
+  stealable-retry; `settle()` blindness; codec round-trips for the new kind + all
+  four event payloads.
 
 ### Foundation pass — solid ground before new features 🧱
 

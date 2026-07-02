@@ -15,8 +15,10 @@ export const APP_CODENAME = 'Full House';
  *  v10 (Phase 2): adds the gate entity kind + nested-zone label fields (x/y/nested
  *               on SectionInfo) — capped interior chambers you opt into.
  *  v11 (Phase 2): adds the RobotEmote + VaultCompleted celebration events —
- *               emoji-only, language-neutral flavor (no wire-shape change). */
-export const PROTOCOL_VERSION = 11;
+ *               emoji-only, language-neutral flavor (no wire-shape change).
+ *  v12 (Phase 3): adds the klepto alien entity kind + incursion events (the
+ *               first slapstick system, §3). */
+export const PROTOCOL_VERSION = 12;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;

@@ -11,8 +11,15 @@ capped interior chambers you opt into through a gate. Plus the gameplay: **surfa
 mining**, **commandable crews** (work-flags), the two-robot **weld**, looping contracts,
 reconnect-resume (§4.7), and the surface/sky aesthetic. Phases 0–2 (`v0.1.0`–`v0.3.0`)
 are all on **`main`**; the chunk grid + `settle` handoff are the proven seam for
-multi-server (the next infra arc). Protocol **v11** (v10 + the emoji
-emote/celebration events). Longer-horizon ideas live in
+multi-server (the next infra arc). Protocol **v12** (v11 added the emoji
+emote/celebration events; v12 adds the **klepto alien** 👾 — Phase 3's first
+slapstick system: it lands, pries off a placed piece, and flees; corner it with
+TWO robots to capture it. `sim/Klepto.ts` holds the critter + every tunable;
+`Chunk.advanceKlepto` owns the state machine; `ChunkRegistry.advanceKleptoSpawner`
+enforces one-alive-planet-wide + the 2–4 min cadence, `KLEPTO_MIN_MS`/
+`KLEPTO_SPAN_MS` to tune. It is deliberately NOT a robot: no OSHA slot, invisible
+to `settle()`, clamped inside its section — nothing about the multi-server seam
+moved). Longer-horizon ideas live in
 [`IDEAS.md`](./IDEAS.md) (fuel, not roadmap — §2.5).
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.

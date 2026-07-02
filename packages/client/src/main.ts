@@ -5,6 +5,11 @@ import {
   DEFAULT_INTERP_DELAY_MS,
   DomainEvent,
   EntityKind,
+  type KleptoCapturedPayload,
+  type KleptoEscapedPayload,
+  type KleptoLandedPayload,
+  KleptoStage,
+  type KleptoStolePayload,
   MessageType,
   PieceStatus,
   PROTOCOL_VERSION,
@@ -148,6 +153,24 @@ function onEvent(name: DomainEvent, payload: unknown): void {
     // The chamber crew finished their interior contract — burst at the vault.
     const p = payload as VaultCompletedPayload;
     stage.celebrate(p.x, p.y);
+  } else if (name === DomainEvent.KleptoLanded) {
+    // The shared-threat klaxon — global on purpose. The zone number reuses the
+    // exact vocabulary already floating on the zone labels; nothing new to read.
+    const p = payload as KleptoLandedPayload;
+    showBanner(`👾❗ ZONE ${p.section + 1}`, 3500);
+    stage.floatEmote(p.x, p.y - 30, '👾');
+  } else if (name === DomainEvent.KleptoStole) {
+    // No banner — the amber loot marker over the fleeing klepto carries the story.
+    const p = payload as KleptoStolePayload;
+    stage.celebrateWith(p.x, p.y, ['😱', '❗']);
+  } else if (name === DomainEvent.KleptoCaptured) {
+    const p = payload as KleptoCapturedPayload;
+    stage.celebrate(p.x, p.y);
+    showBanner('🤝👾🎉', 4000);
+  } else if (name === DomainEvent.KleptoEscaped) {
+    const p = payload as KleptoEscapedPayload;
+    stage.floatEmote(p.x, p.y - 20, '💨');
+    showBanner('👾💨', 3000);
   }
 }
 
@@ -194,6 +217,15 @@ function actionable(e: RenderEntity, carrying: boolean): boolean {
   if (e.kind === EntityKind.WeldPiece) {
     if (e.status === PieceStatus.Ghost) return carrying; // bring the beam (hold)
     if (e.status === PieceStatus.Reserved) return true; // weld a waiting hold
+  }
+  if (e.kind === EntityKind.Klepto) {
+    // Chase it! (Carrying or not — capture is proximity, not hands.) Only tappable
+    // while it's on the ground, and only in MY section: a tap on a klepto across
+    // the boundary falls through to a MOVE toward it — a free "head that way".
+    const stage = e.status & 7;
+    if (stage < KleptoStage.Skittering || stage > KleptoStage.Fleeing) return false;
+    const me = myRobotId === null ? undefined : rendered.find((r) => r.id === myRobotId);
+    return me !== undefined && chunkColOf(e.x) === chunkColOf(me.x);
   }
   return false;
 }

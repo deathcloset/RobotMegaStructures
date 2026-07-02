@@ -28,6 +28,11 @@ export interface ServerConfig {
   /** Delivery-swarm couriers seeded per section (§ Phase 2 logistics): set-and-forget
    *  bots that ferry material to a planted work-flag's section and build it there. */
   seedCouriers: number;
+  /** Klepto incursion cadence (§3 slapstick): the quiet gap between episodes is
+   *  `kleptoMinMs + rand·kleptoSpanMs` (default 2–4 min). Turn both down for demos
+   *  and the wire smoke; set KLEPTO_MIN_MS very high to effectively disable. */
+  kleptoMinMs: number;
+  kleptoSpanMs: number;
   metricsLogMs: number;
   gracePeriodMs: number;
 }
@@ -65,6 +70,8 @@ export function loadConfig(): ServerConfig {
     sectionCapacity: num('SECTION_CAPACITY', 12),
     nestedZoneCap: num('NESTED_ZONE_CAP', 3),
     seedCouriers: num('SEED_COURIERS', 2),
+    kleptoMinMs: num('KLEPTO_MIN_MS', 120_000),
+    kleptoSpanMs: num('KLEPTO_SPAN_MS', 120_000),
     metricsLogMs: num('METRICS_LOG_MS', 5000),
     gracePeriodMs: num('GRACE_PERIOD_MS', DEFAULT_GRACE_PERIOD_MS),
   };

@@ -24,6 +24,9 @@ export class Metrics {
   queued = 0;
   /** Ticks that threw and were absorbed by the SimLoop crash guard. */
   tickErrors = 0;
+  /** Klepto incursions resolved (§3 slapstick) — the live-wire observables. */
+  kleptoCaptured = 0;
+  kleptoEscaped = 0;
 
   recordEgress(bytes: number): void {
     this.egressBytesWindow += bytes;
@@ -72,6 +75,8 @@ export class Metrics {
       queued: this.queued,
       tick_count: this.tickCount,
       tick_errors: this.tickErrors,
+      klepto_captured: this.kleptoCaptured,
+      klepto_escaped: this.kleptoEscaped,
       tick_ms_p50: pct(this.tickSamples, 0.5),
       tick_ms_p95: pct(this.tickSamples, 0.95),
       tick_ms_max: this.tickSamples.length ? round2(Math.max(...this.tickSamples)) : 0,

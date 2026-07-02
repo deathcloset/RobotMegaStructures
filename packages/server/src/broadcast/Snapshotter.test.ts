@@ -21,6 +21,8 @@ function deltaConfig(): ServerConfig {
     sectionCapacity: Number.POSITIVE_INFINITY,
     nestedZoneCap: 3,
     seedCouriers: 0,
+    kleptoMinMs: 120_000,
+    kleptoSpanMs: 120_000,
     metricsLogMs: 5000,
     gracePeriodMs: 120_000,
   };

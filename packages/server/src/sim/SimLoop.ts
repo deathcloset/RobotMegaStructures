@@ -23,6 +23,8 @@ const MAX_CONSECUTIVE_TICK_FAILURES = 10;
 export class SimLoop {
   private readonly tickIntervalMs: number;
   private readonly ticksPerBroadcast: number;
+  private readonly kleptoMinMs: number;
+  private readonly kleptoSpanMs: number;
   private nextTickAt = 0;
   private lastTickWall = Date.now();
   private tick = 0;
@@ -40,6 +42,8 @@ export class SimLoop {
   ) {
     this.tickIntervalMs = 1000 / config.tickHz;
     this.ticksPerBroadcast = Math.max(1, Math.round(config.tickHz / config.broadcastHz));
+    this.kleptoMinMs = config.kleptoMinMs;
+    this.kleptoSpanMs = config.kleptoSpanMs;
   }
 
   start(): void {
@@ -93,6 +97,10 @@ export class SimLoop {
     const dt = (start - this.lastTickWall) / 1000;
     this.lastTickWall = start;
 
+    // 0. the klepto spawner (§3 slapstick): at most one alive planet-wide, a quiet
+    //    gap between episodes; the cadence knobs come from config.
+    this.chunks.advanceKleptoSpawner(start, this.kleptoMinMs, this.kleptoSpanMs);
+
     // 1. advance simulation (the delivery swarm ferries to wherever a flag is planted)
     const flagSection = this.chunks.flagSection();
     for (const chunk of this.chunks.all()) chunk.step(dt, start, flagSection);
@@ -107,7 +115,11 @@ export class SimLoop {
 
     // 2. drain + broadcast domain events (the §6 first-class stream)
     for (const chunk of this.chunks.all()) {
-      for (const ev of chunk.drainEvents()) this.gateway.broadcastEvent(ev.name, ev.payload);
+      for (const ev of chunk.drainEvents()) {
+        if (ev.name === DomainEvent.KleptoCaptured) this.metrics.kleptoCaptured += 1;
+        else if (ev.name === DomainEvent.KleptoEscaped) this.metrics.kleptoEscaped += 1;
+        this.gateway.broadcastEvent(ev.name, ev.payload);
+      }
     }
 
     // 3. broadcast snapshots at the (slower) broadcast rate

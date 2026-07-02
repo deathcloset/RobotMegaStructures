@@ -9,6 +9,7 @@ import {
   wrapDeltaX,
 } from '@rms/shared';
 import { Chunk, flagIdOf } from './Chunk';
+import { KLEPTO_FIRST_DELAY_MS, KLEPTO_ID_BASE, KLEPTO_RETRY_MS } from './Klepto';
 import type { Robot } from './Robot';
 
 /** A player held at a full checkpoint is force-admitted after this long, so a tight
@@ -158,6 +159,51 @@ export class ChunkRegistry {
   flagSection(): number | null {
     for (const c of this.chunks) if (c.hasFlags) return c.id;
     return null;
+  }
+
+  // ── Klepto spawner (§3 slapstick) — the planet-wide one-alive invariant lives
+  // here, with the other planet-wide invariant (one-flag-per-player). ────────────
+  private kleptoWasAlive = false;
+  private nextKleptoAt = 0; // 0 → initialize to now + KLEPTO_FIRST_DELAY_MS on first call
+  private kleptoSerial = 0;
+
+  /**
+   * Drive the planet-wide klepto spawner; the SimLoop calls this once per tick.
+   * At most one klepto alive anywhere (a stateless scan — no host field to
+   * desync); the next episode is scheduled a quiet gap of `minMs..minMs+spanMs`
+   * AFTER the previous one ends. The landing site prefers a section with a live
+   * player AND something stealable — the show lands where the audience is —
+   * falling back to any stealable section.
+   */
+  advanceKleptoSpawner(now: number, minMs: number, spanMs: number): void {
+    if (this.chunks.some((c) => c.hasKlepto)) {
+      this.kleptoWasAlive = true;
+      return;
+    }
+    if (this.kleptoWasAlive) {
+      // The episode just ended → start the quiet gap.
+      this.kleptoWasAlive = false;
+      this.nextKleptoAt = now + minMs + Math.random() * spanMs;
+      return;
+    }
+    if (this.nextKleptoAt === 0) {
+      this.nextKleptoAt = now + KLEPTO_FIRST_DELAY_MS; // demo-friendly first landing
+      return;
+    }
+    if (now < this.nextKleptoAt) return;
+    const stealable = this.chunks.filter((c) => c.hasStealable);
+    if (stealable.length === 0) {
+      this.nextKleptoAt = now + KLEPTO_RETRY_MS; // rare: every contract mid-reset
+      return;
+    }
+    const withPlayer = stealable.filter((c) => {
+      for (const r of c.occupants()) if (r.controlled) return true;
+      return false;
+    });
+    const pool = withPlayer.length > 0 ? withPlayer : stealable;
+    const host = pool[Math.floor(Math.random() * pool.length)]!;
+    host.spawnKlepto(now, KLEPTO_ID_BASE + (this.kleptoSerial++ % 100_000));
+    this.kleptoWasAlive = true; // arm the quiet-gap logic at spawn, not on observation
   }
 
   /** How many bots are currently held (queued) at a checkpoint — for the metrics

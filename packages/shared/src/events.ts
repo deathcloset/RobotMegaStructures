@@ -28,6 +28,17 @@ export enum DomainEvent {
   /** A nested vault's interior contract just completed (the start of its rebuild
    *  beat) — the client celebrates at the chamber. */
   VaultCompleted = 18,
+  // Klepto incursion (Phase 3 §3 — the first slapstick system)
+  /** A klepto landed in a section — the shared-threat klaxon (deliberately global). */
+  KleptoLanded = 19,
+  /** It pried off a placed piece and is fleeing with it. */
+  KleptoStole = 20,
+  /** Two robots cornered it — the piece is restored and the klepto beamed away
+   *  (captured, never killed; mischief, not malice). */
+  KleptoCaptured = 21,
+  /** Nobody caught it — it beamed out (with the part, or empty-handed). The crew
+   *  rebuilds through the ordinary contract loop; nothing else changes. */
+  KleptoEscaped = 22,
 }
 
 /** Payload of DomainEvent.PiecePlaced — carries live contract progress so a
@@ -50,6 +61,36 @@ export interface RobotEmotePayload {
  *  the client can celebrate there without knowing zone geometry. */
 export interface VaultCompletedPayload {
   zoneId: number;
+  x: number;
+  y: number;
+}
+
+/** Payload of DomainEvent.KleptoLanded — which section (for the banner's zone
+ *  number) and where the critter touches down. */
+export interface KleptoLandedPayload {
+  section: number;
+  x: number;
+  y: number;
+}
+
+/** Payload of DomainEvent.KleptoStole. `pieceId` is deliberately on the wire:
+ *  when identity ships, "a klepto stole 🦾🌟-7's girder" is a one-liner (the
+ *  victim-attribution seam). */
+export interface KleptoStolePayload {
+  pieceId: number;
+  x: number;
+  y: number;
+}
+
+/** Payload of DomainEvent.KleptoCaptured — the celebration anchor (like
+ *  VaultCompleted). */
+export interface KleptoCapturedPayload {
+  x: number;
+  y: number;
+}
+
+/** Payload of DomainEvent.KleptoEscaped — where it beamed out. */
+export interface KleptoEscapedPayload {
   x: number;
   y: number;
 }

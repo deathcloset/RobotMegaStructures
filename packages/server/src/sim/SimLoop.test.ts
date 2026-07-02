@@ -17,6 +17,7 @@ import { SimLoop } from './SimLoop';
 function makeLoop(shouldThrow: () => boolean) {
   const config = { tickHz: 10, broadcastHz: 4 } as ServerConfig;
   const chunks = {
+    advanceKleptoSpawner: () => {},
     flagSection() {
       if (shouldThrow()) throw new Error('boom');
       return null;
