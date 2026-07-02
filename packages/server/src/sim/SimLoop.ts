@@ -1,10 +1,18 @@
 import { DomainEvent, type EntitySnapshot, encodeMessage, MessageType } from '@rms/shared';
 import type { Snapshotter } from '../broadcast/Snapshotter';
 import type { ServerConfig } from '../config';
+import { log } from '../log';
 import type { Metrics } from '../metrics/Metrics';
 import type { WsGateway } from '../net/WsGateway';
 import type { WorldRepo } from '../state/repository';
 import type { ChunkRegistry } from './ChunkRegistry';
+
+/** Consecutive tick failures tolerated before the loop gives up and lets the process
+ *  crash (visible + supervisor-restartable) instead of limping on as a zombie with a
+ *  frozen world. One transient bad tick shouldn't kill every phone's session, but a
+ *  deterministic per-tick throw shouldn't log-spam at 10 Hz forever either. 10 ticks
+ *  ≈ 1 s at the default rate. */
+const MAX_CONSECUTIVE_TICK_FAILURES = 10;
 
 /**
  * Drift-corrected fixed-rate driver. Two rates (§7.4): the sim steps at tickHz;
@@ -20,6 +28,7 @@ export class SimLoop {
   private tick = 0;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private consecutiveTickFailures = 0;
 
   constructor(
     config: ServerConfig,
@@ -51,7 +60,35 @@ export class SimLoop {
     this.timer = setTimeout(() => this.runTick(), Math.max(0, this.nextTickAt - Date.now()));
   }
 
+  /** One scheduled beat: run the tick body behind a crash guard — a thrown tick is
+   *  logged loudly and the loop keeps going (the world must survive one bad tick) —
+   *  then always schedule the next beat. Only a persistent, consecutive failure
+   *  escalates to a real crash. */
   private runTick(): void {
+    try {
+      this.tickBody();
+      this.consecutiveTickFailures = 0;
+    } catch (err) {
+      this.consecutiveTickFailures += 1;
+      this.metrics.tickErrors += 1;
+      log.error('tick failed', {
+        err: String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        consecutive: this.consecutiveTickFailures,
+      });
+      if (this.consecutiveTickFailures >= MAX_CONSECUTIVE_TICK_FAILURES) {
+        this.stop();
+        throw err; // uncaughtException → exit → runserver.sh/systemd restarts us
+      }
+    }
+    // schedule the next tick (drift-corrected; resync if we fell behind) — even
+    // after a failed one.
+    this.nextTickAt += this.tickIntervalMs;
+    if (this.nextTickAt < Date.now()) this.nextTickAt = Date.now() + this.tickIntervalMs;
+    this.schedule();
+  }
+
+  private tickBody(): void {
     const start = Date.now();
     const dt = (start - this.lastTickWall) / 1000;
     this.lastTickWall = start;
@@ -80,11 +117,6 @@ export class SimLoop {
     for (const conn of this.gateway.all) conn.drain(start);
 
     this.metrics.recordTick(Date.now() - start);
-
-    // 5. schedule next tick (drift-corrected; resync if we fell behind)
-    this.nextTickAt += this.tickIntervalMs;
-    if (this.nextTickAt < Date.now()) this.nextTickAt = Date.now() + this.tickIntervalMs;
-    this.schedule();
   }
 
   private broadcast(now: number): void {

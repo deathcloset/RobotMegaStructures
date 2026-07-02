@@ -22,6 +22,40 @@ _(Codenames past 0.1.0 are tentative — fuel, not a contract.)_
 
 Building on the v0.3.0 architecture (most recent first).
 
+### Foundation pass — solid ground before new features 🧱
+
+A hardening/polish sweep of the systems we already have (Ben's steer, 2026-07-02):
+resilience, rough edges, hygiene — plus one bit of language-neutral fun.
+
+- **Work-flags survive crossing sections** (behavior fix): planting a flag and
+  walking across a boundary used to silently delete it — undermining slice 9's
+  set-and-forget couriers. A flag now stays planted until its owner picks it up,
+  replants it, or their reconnect grace expires. `ChunkRegistry.applyIntent` is the
+  single intent entry point and coordinates the one-flag-per-player invariant
+  planet-wide (chunks stay isolated actors — the multi-server seam is untouched).
+- **Emoji emotes + vault celebration 🎉** (fun, deliberately language-agnostic —
+  emoji only, never words, so the game reads the same on every phone in every
+  language): robots pop an emoji at work milestones (🔩 placed, ⚡🤝 weld, ⛏️💎 dig),
+  the whole section crew reliably cheers a completed contract, and the nested
+  vault's interior contract — previously silent — now fires `VaultCompleted` with a
+  burst of celebration emoji at the chamber. Server-picked, per-robot cooldown +
+  probability gate keep it sparse (~30 bytes/event, milestone-bounded).
+  **Protocol → 11** (two new event ids; wire shape unchanged).
+- **Tick-loop crash guard** (resilience): an exception inside a tick no longer
+  kills the whole server — it's logged loudly (`tick_errors` metric) and the loop
+  keeps scheduling; ten *consecutive* failures escalate to a visible crash so a
+  structurally broken sim restarts under its supervisor instead of zombie-ing.
+- **Chunk.ts split + dedupe** (no behavior change): the builder/courier brains
+  moved to `sim/crewAi.ts`; one generic wrap-aware `nearest()` replaced five
+  hand-rolled scan loops; the unnamed tunables got names (`AI_SPEED_FACTOR`,
+  dawdle/beat timings, spawn bands, `CREW_CAP_MARGIN`…). Chunk.ts: 883 → ~710 lines.
+- **CI now lints** (Biome ran locally since Phase 0 but was never enforced) and the
+  README/package.json/HANDOFF version-and-branch drift is synced to v0.3.0 reality.
+- **Proven**: unit (108 tests, +10 and one updated) — flag persistence across
+  handoffs/replants/pickup/expiry, crash-guard survive + escalate, reliable
+  contract celebration, emote cooldown, once-per-completion vault events; the
+  full pre-existing suite passes unmodified through the refactor.
+
 ### Slice 9 — delivery-swarm couriers 🚚
 
 The work-flag grows a **logistics** arm: plant it and a **swarm of couriers** ferries

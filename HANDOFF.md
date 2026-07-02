@@ -11,18 +11,19 @@ capped interior chambers you opt into through a gate. Plus the gameplay: **surfa
 mining**, **commandable crews** (work-flags), the two-robot **weld**, looping contracts,
 reconnect-resume (§4.7), and the surface/sky aesthetic. Phases 0–2 (`v0.1.0`–`v0.3.0`)
 are all on **`main`**; the chunk grid + `settle` handoff are the proven seam for
-multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live in
+multi-server (the next infra arc). Protocol **v11** (v10 + the emoji
+emote/celebration events). Longer-horizon ideas live in
 [`IDEAS.md`](./IDEAS.md) (fuel, not roadmap — §2.5).
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
-- **In flight (branch `claude/dreamy-newton-1rj5p1`, new PR — not yet on `main`):**
-  Phase 2 continued — **slice 8: the vault worksite** (the nested vault has its own
-  interior contract a resident crew builds and a player can join; loops on its own,
-  zone-scoped via an internal `zoneId`); **slice 9: delivery-swarm couriers** (plant a
-  work-flag → a swarm of `isCourier` bots ferries material to that section from across
-  the planet and builds it; `ChunkRegistry.flagSection()` + `SimLoop` point them at the
-  flag). Both server-only (still protocol **v10**). See CHANGELOG "Unreleased".
+- **Merged (PR #4, on `main`):** Phase 2 continued — **slice 8: the vault worksite**
+  (the nested vault has its own interior contract a resident crew builds and a player
+  can join; loops on its own, zone-scoped via an internal `zoneId`); **slice 9:
+  delivery-swarm couriers** (plant a work-flag → a swarm of `isCourier` bots ferries
+  material to that section from across the planet and builds it;
+  `ChunkRegistry.flagSection()` + `SimLoop` point them at the flag). Both server-only.
+  See CHANGELOG "Unreleased".
 
 ## Run / operate
 
@@ -150,15 +151,21 @@ through the one `applyIntent` chokepoint — copy that shape.
   but drain in waves; the `queued` gauge rises and falls rather than climbing to a frozen
   plateau). Caps **vary per zone** (`CAP_MULT` + `MIN_SECTION_CAP` in `index.ts`, anchored
   to `SECTION_CAPACITY`) and each section's crew scales to its cap (`pop = capacity − 3`).
-  Other knobs: `Chunk.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`); watch the `queued`
-  gauge in the metrics log.
+  Other knobs: `crewAi.ts` (`RELOCATE_*`, `HOT_PERIOD_MS`, `HOT_BIAS`, dawdle/beat
+  timings — the builder/courier brains live there now, called from `Chunk.step`);
+  watch the `queued` gauge in the metrics log.
 
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids
 `0..CHUNK_COLS-1`). A `Chunk`'s `width` is the **global** circumference (wrap), not
-its section width; `x0..x1` is its slice. Work-flags are kept inside their section
-and clear on a cross-boundary handoff (a known rough edge to revisit with the real
-checkpoint). The zoom-out floor is capped at one lap (camera `minScale`) — a taller
+its section width; `x0..x1` is its slice. Work-flags are planted inside a section but
+**survive their owner's cross-boundary handoffs** (set-and-forget ferrying) — they
+clear only on pickup, replant, or the owner's grace expiry;
+`ChunkRegistry.applyIntent`/`clearFlagOf` coordinate the one-flag-per-player
+invariant across sections (chunks still never touch each other; known quirk: tapping
+your remote flag while inside a vault steps you out of the chamber, consistent with
+"tapping floor work leaves the chamber").
+The zoom-out floor is capped at one lap (camera `minScale`) — a taller
 world that wraps will want render-side tiling. Two-rate loop, codec, interpolation,
 resilience, and build/weld/mining/crew mechanics all carry over unchanged.
 

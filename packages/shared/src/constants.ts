@@ -13,8 +13,10 @@ export const APP_CODENAME = 'Full House';
  *  v8 (Phase 2): adds the SectionFull checkpoint event (OSHA caps).
  *  v9 (Phase 2): adds S_SECTIONS (per-section cap/occupancy for zone labels).
  *  v10 (Phase 2): adds the gate entity kind + nested-zone label fields (x/y/nested
- *               on SectionInfo) — capped interior chambers you opt into. */
-export const PROTOCOL_VERSION = 10;
+ *               on SectionInfo) — capped interior chambers you opt into.
+ *  v11 (Phase 2): adds the RobotEmote + VaultCompleted celebration events —
+ *               emoji-only, language-neutral flavor (no wire-shape change). */
+export const PROTOCOL_VERSION = 11;
 
 /** Fixed-point scale for positions on the wire: 1/16-unit precision (§7.4). */
 export const FP_SCALE = 16;

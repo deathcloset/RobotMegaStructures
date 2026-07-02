@@ -1,12 +1,14 @@
 import {
   CHUNK_COLS,
+  type ClientMessage,
   chunkColOf,
   GROUND_Y,
+  MessageType,
   SECTION_WIDTH,
   type SectionInfo,
   wrapDeltaX,
 } from '@rms/shared';
-import { Chunk } from './Chunk';
+import { Chunk, flagIdOf } from './Chunk';
 import type { Robot } from './Robot';
 
 /** A player held at a full checkpoint is force-admitted after this long, so a tight
@@ -117,9 +119,37 @@ export class ChunkRegistry {
     return undefined;
   }
 
-  /** Remove a robot wherever it lives (grace expiry / disconnect). */
+  /**
+   * Route an intent to the robot's current section, coordinating the few
+   * cross-section concerns on the way — the one-flag-per-player invariant is
+   * planet-wide, and a planted flag may sit sections away from its owner (it
+   * survives checkpoint handoffs; § Phase 2 logistics). Chunks stay isolated:
+   * only this registry reaches across sections.
+   */
+  applyIntent(robotId: number, msg: ClientMessage): void {
+    // Replanting moves THE flag: clear the old one wherever it lives, then let the
+    // robot's section plant the new one.
+    if (msg.t === MessageType.C_INTENT_FLAG) this.clearFlagOf(robotId);
+    this.chunkOfRobot(robotId)?.applyIntent(robotId, msg);
+    // Tapping your own flag picks it up even from across a boundary (a viewport can
+    // see into the next section). The local pickup already happened in applyIntent
+    // when robot and flag share a section — this sweep is idempotent.
+    if (msg.t === MessageType.C_INTENT_INTERACT && msg.targetId === flagIdOf(robotId)) {
+      this.clearFlagOf(robotId);
+    }
+  }
+
+  /** Remove a player's work-flag wherever it's planted (pickup / replant / a true
+   *  removal at grace expiry). */
+  clearFlagOf(robotId: number): void {
+    for (const c of this.chunks) c.clearFlag(robotId);
+  }
+
+  /** Remove a robot wherever it lives (grace expiry / disconnect). A true removal —
+   *  unlike a checkpoint handoff — takes the player's planted flag with it. */
   removeRobot(robotId: number): void {
     this.chunkOfRobot(robotId)?.removeOccupant(robotId);
+    this.clearFlagOf(robotId);
   }
 
   /** Where the delivery swarm should carry material: a section holding a work-flag

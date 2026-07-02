@@ -1,9 +1,9 @@
 {
   "name": "robot-mega-structures",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Robot Mega Structures — Phase 1: the build loop (prove the fun).",
+  "description": "Robot Mega Structures — Phase 2: the world gets big (scale the population).",
   "engines": {
     "node": ">=22"
   },
