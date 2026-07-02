@@ -103,9 +103,10 @@ export class WsGateway {
       case MessageType.C_INTENT_INTERACT:
       case MessageType.C_INTENT_FLAG:
         if (conn.robotId === null) return;
-        // Apply in whichever section currently holds the robot (it may have crossed
-        // a boundary since it joined).
-        this.chunks.chunkOfRobot(conn.robotId)?.applyIntent(conn.robotId, msg);
+        // The registry routes to whichever section currently holds the robot (it
+        // may have crossed a boundary since it joined) and coordinates the
+        // cross-section flag rules on the way.
+        this.chunks.applyIntent(conn.robotId, msg);
         this.metrics.intentsApplied += 1;
         return;
       default:

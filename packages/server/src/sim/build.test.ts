@@ -370,7 +370,7 @@ describe('commandable crews — work-flags (§ Phase 2)', () => {
     expect(flags[0]!.x).toBe(900);
   });
 
-  it('picks the flag up when its owner taps it, and clears it when they leave', () => {
+  it('picks the flag up when its owner taps it, and leaves it planted on a handoff', () => {
     const chunk = new Chunk();
     const robot = new Robot(1, 'r', 100, 200, false, 1);
     chunk.addOccupant(robot);
@@ -380,8 +380,9 @@ describe('commandable crews — work-flags (§ Phase 2)', () => {
     expect(flagsOf(chunk)).toHaveLength(0);
 
     chunk.applyIntent(robot.id, flagAt(500, 100));
-    chunk.removeOccupant(robot.id); // owner departs
-    expect(flagsOf(chunk)).toHaveLength(0);
+    chunk.removeOccupant(robot.id); // owner crosses out (a checkpoint handoff)
+    expect(flagsOf(chunk)).toHaveLength(1); // set-and-forget: the flag stays planted
+    // (a TRUE removal — grace expiry — clears it via ChunkRegistry.removeRobot)
   });
 
   it('rallies a builder to mine the vein by the flag, not the one nearest the builder', () => {

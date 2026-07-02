@@ -207,6 +207,62 @@ describe('ChunkRegistry — roaming work crews', () => {
   });
 });
 
+describe('ChunkRegistry — work-flag persistence (§ Phase 2 crews/logistics)', () => {
+  const flagAt = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_FLAG, tx, ty }) as const;
+  const interact = (targetId: number) => ({ t: MessageType.C_INTENT_INTERACT, targetId }) as const;
+  const totalFlags = (reg: ChunkRegistry) => {
+    let n = 0;
+    for (const c of reg.all()) if (c.hasFlags) n += 1;
+    return n;
+  };
+
+  /** A player in section 0 with a planted flag, then walked into section 1. */
+  function plantAndCross() {
+    const reg = new ChunkRegistry();
+    const player = new Robot(1, 'p', 500, 800, false, 1);
+    reg.get(0)!.addOccupant(player);
+    reg.applyIntent(1, flagAt(500, 820)); // plant in section 0
+    player.x = 1500; // walk into section 1…
+    reg.settle(1000); // …and hand off at the checkpoint
+    expect(reg.chunkOfRobot(1)).toBe(reg.get(1));
+    return { reg, player };
+  }
+
+  it('a planted flag SURVIVES its owner crossing a section boundary (set-and-forget)', () => {
+    const { reg } = plantAndCross();
+    expect(reg.flagSection()).toBe(0); // still planted where it was dropped
+  });
+
+  it('replanting from another section moves the ONE flag (never two)', () => {
+    const { reg } = plantAndCross();
+    reg.applyIntent(1, flagAt(1600, 820)); // replant in the new section
+    expect(reg.flagSection()).toBe(1); // the flag moved…
+    expect(reg.get(0)!.hasFlags).toBe(false); // …the old one is gone…
+    expect(totalFlags(reg)).toBe(1); // …exactly one planet-wide
+  });
+
+  it('tapping your own flag picks it up even from across the boundary', () => {
+    const { reg } = plantAndCross();
+    reg.applyIntent(1, interact(4_000_000 + 1)); // tap it from section 1
+    expect(reg.flagSection()).toBeNull();
+  });
+
+  it("someone else's flag can't be picked up remotely", () => {
+    const { reg } = plantAndCross();
+    const other = new Robot(2, 'q', 1600, 800, false, 2);
+    reg.get(1)!.addOccupant(other);
+    reg.applyIntent(2, interact(4_000_000 + 1)); // robot 2 taps robot 1's flag id
+    expect(reg.flagSection()).toBe(0); // still planted
+  });
+
+  it('a true removal (grace expiry) takes the remote flag too', () => {
+    const { reg } = plantAndCross();
+    reg.removeRobot(1);
+    expect(reg.getRobot(1)).toBeUndefined();
+    expect(reg.flagSection()).toBeNull(); // no orphaned flag left behind
+  });
+});
+
 describe('ChunkRegistry — delivery-swarm logistics', () => {
   const flagAt = (tx: number, ty: number) => ({ t: MessageType.C_INTENT_FLAG, tx, ty }) as const;
 

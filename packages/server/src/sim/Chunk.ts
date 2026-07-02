@@ -30,7 +30,11 @@ import type { Robot } from './Robot';
 
 /** Work-flag ids are derived from the owner's robot id (one flag per player) and
  *  kept disjoint from the seeded-entity ranges in `blueprint.ts`. */
-const FLAG_ID_BASE = 4_000_000;
+export const FLAG_ID_BASE = 4_000_000;
+/** The (single) work-flag entity id a player robot owns. */
+export function flagIdOf(robotId: number): number {
+  return FLAG_ID_BASE + robotId;
+}
 
 /** Ambient wanderers mill in a band this tall just above the surface, rather than
  *  floating up into the empty sky. */
@@ -113,7 +117,10 @@ export class Chunk {
   removeOccupant(robotId: number): void {
     const robot = this.robots.get(robotId);
     if (!this.robots.delete(robotId)) return;
-    this.clearFlag(robotId); // a departed player's work-flag goes with them
+    // NOTE: the robot's work-flag deliberately stays planted — a checkpoint handoff
+    // (settle) must not take the flag with it (set-and-forget ferrying, § Phase 2
+    // logistics). A TRUE removal (grace expiry) clears it via
+    // ChunkRegistry.removeRobot → clearFlagOf.
     if (robot) this.leaveZone(robot); // free its nested-zone slot, if any
     // Any weld this robot was part of self-heals in advanceWelds (it'll see the
     // participant missing next tick and release/demote the piece).
@@ -122,7 +129,7 @@ export class Chunk {
 
   /** Plant or move a player's single work-flag (on the surface). § Phase 2 crews. */
   private placeFlag(robotId: number, x: number): void {
-    const id = FLAG_ID_BASE + robotId;
+    const id = flagIdOf(robotId);
     const y = this.groundY - 8; // flags sit on the surface
     const existing = this.flags.get(id);
     if (existing) {
@@ -133,8 +140,10 @@ export class Chunk {
     }
   }
 
-  private clearFlag(robotId: number): void {
-    this.flags.delete(FLAG_ID_BASE + robotId);
+  /** Remove this player's work-flag if it's planted HERE (the registry sweeps all
+   *  sections for pickup/replant/true-removal). Returns whether one was here. */
+  clearFlag(robotId: number): boolean {
+    return this.flags.delete(flagIdOf(robotId));
   }
 
   /** Nearest work-flag to a point (the crew rallies to whichever flag is closest).

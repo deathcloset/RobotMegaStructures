@@ -157,9 +157,14 @@ through the one `applyIntent` chokepoint — copy that shape.
 **Watch out:** the world is a wrapping `WORLD_WIDTH × WORLD_HEIGHT` ring of sections
 (`WORLD_WIDTH = SECTION_WIDTH × CHUNK_COLS`; `CHUNK_ID` is gone — chunks are ids
 `0..CHUNK_COLS-1`). A `Chunk`'s `width` is the **global** circumference (wrap), not
-its section width; `x0..x1` is its slice. Work-flags are kept inside their section
-and clear on a cross-boundary handoff (a known rough edge to revisit with the real
-checkpoint). The zoom-out floor is capped at one lap (camera `minScale`) — a taller
+its section width; `x0..x1` is its slice. Work-flags are planted inside a section but
+**survive their owner's cross-boundary handoffs** (set-and-forget ferrying) — they
+clear only on pickup, replant, or the owner's grace expiry;
+`ChunkRegistry.applyIntent`/`clearFlagOf` coordinate the one-flag-per-player
+invariant across sections (chunks still never touch each other; known quirk: tapping
+your remote flag while inside a vault steps you out of the chamber, consistent with
+"tapping floor work leaves the chamber").
+The zoom-out floor is capped at one lap (camera `minScale`) — a taller
 world that wraps will want render-side tiling. Two-rate loop, codec, interpolation,
 resilience, and build/weld/mining/crew mechanics all carry over unchanged.
 
