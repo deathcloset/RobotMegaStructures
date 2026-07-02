@@ -16,13 +16,13 @@ multi-server (the next infra arc). Protocol **v10**. Longer-horizon ideas live i
 
 - **Live:** `https://192-154-110-158.sslip.io` (password-gated) — on the LA box.
 - **What it is / isn't:** README + design doc §9. Scope discipline: design doc §2.5.
-- **In flight (branch `claude/dreamy-newton-1rj5p1`, new PR — not yet on `main`):**
-  Phase 2 continued — **slice 8: the vault worksite** (the nested vault has its own
-  interior contract a resident crew builds and a player can join; loops on its own,
-  zone-scoped via an internal `zoneId`); **slice 9: delivery-swarm couriers** (plant a
-  work-flag → a swarm of `isCourier` bots ferries material to that section from across
-  the planet and builds it; `ChunkRegistry.flagSection()` + `SimLoop` point them at the
-  flag). Both server-only (still protocol **v10**). See CHANGELOG "Unreleased".
+- **Merged (PR #4, on `main`):** Phase 2 continued — **slice 8: the vault worksite**
+  (the nested vault has its own interior contract a resident crew builds and a player
+  can join; loops on its own, zone-scoped via an internal `zoneId`); **slice 9:
+  delivery-swarm couriers** (plant a work-flag → a swarm of `isCourier` bots ferries
+  material to that section from across the planet and builds it;
+  `ChunkRegistry.flagSection()` + `SimLoop` point them at the flag). Both server-only.
+  See CHANGELOG "Unreleased".
 
 ## Run / operate
 

@@ -4,16 +4,19 @@ A browser game where lots of little robots build an enormous structure together,
 joinable from a link on the cheapest phone. See the full vision in
 [`Robot-Mega-Structures-Design-Doc-v1.1.md`](./Robot-Mega-Structures-Design-Doc-v1.1.md).
 
-**Status: v0.2.0 "First Bolt" 🔩** (Phase 1 complete) — see [`CHANGELOG.md`](./CHANGELOG.md)
-for what shipped and [`HANDOFF.md`](./HANDOFF.md) to pick up development.
-**Phase 2 is underway** on a branch 🪐: the world is now a wide side-scrolling
-planet whose horizon wraps, divided into a 🧩 grid of sections (each its own
-worksite, so your bandwidth stays tiny no matter how big the planet gets), with a
-real surface and sky, ⛏️ ore veins to mine, 🚩 work-flags to rally your builder
-crew, and a 🦺 OSHA cap per section that throttles the bot swarm at the checkpoint
-(you always pass) — see CHANGELOG "Unreleased".
+**Status: v0.3.0 "Full House" 🏟️** (Phase 2 milestone, on `main`) — see
+[`CHANGELOG.md`](./CHANGELOG.md) for what shipped and [`HANDOFF.md`](./HANDOFF.md)
+to pick up development. **Phase 2 shipped** 🪐: the world is a wide side-scrolling
+planet whose horizon wraps, divided into a 🧩 grid of numbered sections (each its
+own worksite, so your bandwidth stays tiny no matter how big the planet gets), with
+a real surface and sky, ⛏️ ore veins to mine, 🚩 work-flags to rally your builder
+crew, a 🚚 delivery swarm that ferries material to your flag from across the
+planet, a 🦺 OSHA cap per section that throttles the bot swarm at the checkpoint
+(you always pass), and a ◆ nested vault chamber to opt into — plus its own interior
+worksite.
 
-**What works today (Phase 1):** a real build loop on a live authoritative server —
+**The heart of it (built in Phase 1, still the core loop):** a real build loop on a
+live authoritative server —
 robots haul material from depots to a ghost blueprint and place it; a top row of
 **two-robot weld** pieces needs a holder + a welder (a player *or* an AI bot);
 **autonomous builder bots** keep the worksite bustling; finished contracts loop to
@@ -29,14 +32,15 @@ You asked: *"is this a branch or a PR or a Pull?"* — here's the whole vocabula
 - **Repository ("repo")** — the project folder, tracked by **git**. This is it.
 - **Clone** — download a copy of the repo to a computer (command below).
 - **Branch** — a parallel copy of the code you can change without touching the
-  main version. The new code lives on a branch called `claude/hopeful-shannon-9q9hfz`.
+  main version. New work is developed on a branch, then merged.
 - **`main`** — the primary branch (the "official" version).
 - **Pull Request (PR, a.k.a. "pull")** — a request to merge a branch into `main`,
-  with a page on GitHub to review the changes. Ours is **PR #1**. Merging it copies
-  this code into `main`.
+  with a page on GitHub to review the changes. Merging it copies that branch's
+  code into `main`.
 
-So: the code is on a **branch**, proposed via a **PR**. Nothing is in `main` yet
-until you click **Merge** on PR #1.
+So: new code arrives on a **branch**, proposed via a **PR**, and lands in `main`
+when you click **Merge**. That's how every phase so far has shipped — today
+everything released lives on `main`.
 
 > **About "venv":** that's a *Python* thing. This is a JavaScript/Node project, so
 > there's no venv — but you get the same tidiness for free: `pnpm install` puts all
@@ -56,9 +60,7 @@ Great for trying it yourself before hosting.
 2. **Get the code.** On GitHub click the green **Code** button → **Download ZIP**
    and unzip it — *or*, if you have git:
    ```bash
-   # while the code is still on the branch (before PR #1 is merged):
-   git clone -b claude/hopeful-shannon-9q9hfz https://github.com/deathcloset/RobotMegaStructures.git
-   # (after you merge PR #1, drop the -b part and just clone normally)
+   git clone https://github.com/deathcloset/RobotMegaStructures.git
    cd RobotMegaStructures
    ```
 3. **Run it:**
@@ -85,7 +87,7 @@ Gorilla box in LA). You don't need Apache or nginx — the installer sets up
 2. **Get the code onto the server:**
    ```bash
    sudo apt update && sudo apt install -y git
-   git clone -b claude/hopeful-shannon-9q9hfz https://github.com/deathcloset/RobotMegaStructures.git
+   git clone https://github.com/deathcloset/RobotMegaStructures.git
    cd RobotMegaStructures
    ```
 3. **Run the installer:**
